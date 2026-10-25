@@ -1,0 +1,27 @@
+Soru.
+
+Bir öğrenci, güneşli bir günde cisimlerin yüksekliğini gölge boylarından yararlanarak hesaplamaktadır. Yanına diktiği bir virgül beş metre boyundaki düz bir çubuğun gölgesini iki metre ölçmüştür. Çubuk ve gölgesi şekilde gösterilmiştir. Aynı anda ölçtüğü diğer gölge boyları şöyledir: Bina A'nın gölgesi on altı metre. Ağacın gölgesi altı metre.
+
+Şekilde, bir virgül beş metrelik çubuk ile iki metrelik gölgesi ve gölgesi on altı metre olan Bina A görülmektedir.
+
+Buna göre;
+
+Birinci ifade: Gölge boyu sekiz metre olan bir direğin yüksekliği, gölge boyu dört metre olan bir direğin yüksekliğinden dört metre fazladır.
+
+İkinci ifade: Bina A'nın yüksekliği on iki metredir.
+
+Üçüncü ifade: Ağacın yüksekliği dört virgül beş metredir.
+
+İfadelerinden hangileri doğrudur?
+
+Çözüm.
+
+Aynı anda güneş ışınları paralel olduğundan, her cisim ve gölgesi benzer dik üçgenler oluşturur. Yükseklik ile gölge uzunluğunun oranı sabittir. Çubuktan bu oran, bir virgül beş bölü iki, yani sıfır virgül yetmiş beş bulunur.
+
+Birinci ifade: Gölgesi sekiz metre olan direğin yüksekliği, sekiz çarpı sıfır virgül yetmiş beş, yani altı metredir. Gölgesi dört metre olanın yüksekliği, dört çarpı sıfır virgül yetmiş beş, yani üç metredir. Aralarındaki fark, altı eksi üç, yani üç metredir; dört metre değildir. Gölge farkını yükseklik farkı sanmak yanılgıdır. İfade yanlıştır.
+
+İkinci ifade: Bina A'nın yüksekliği, on altı çarpı sıfır virgül yetmiş beş, yani on iki metredir. İfade doğrudur.
+
+Üçüncü ifade: Ağacın yüksekliği, altı çarpı sıfır virgül yetmiş beş, yani dört virgül beş metredir. İfade doğrudur.
+
+Dolayısıyla yalnızca ikinci ve üçüncü ifadeler doğrudur. Doğru cevap: A.

@@ -107,6 +107,75 @@ def test_tts_sherpa_available_when_model_env_points_at_model(monkeypatch, tmp_pa
     assert ok is True
 
 
+def _piper_voice_dir(root, name="tr_TR-dfki-medium"):
+    # Layout of every vits-piper-* sherpa-onnx release: the .onnx keeps the
+    # voice name and espeak-ng-data is the phonemizer data dir.
+    (root / f"{name}.onnx").write_bytes(b"")
+    (root / f"{name}.onnx.json").write_text("{}")
+    (root / "tokens.txt").write_text("_ 0\n")
+    (root / "espeak-ng-data").mkdir()
+    return root
+
+
+def test_tts_sherpa_available_for_piper_voice_dir(monkeypatch, tmp_path):
+    # Piper voices (the only sherpa-onnx option for e.g. Turkish) ship
+    # <voice>.onnx, not model.onnx; the engine used to reject them.
+    monkeypatch.setitem(sys.modules, "sherpa_onnx", types.ModuleType("sherpa_onnx"))
+    monkeypatch.setenv("OMNIVOICE_SHERPA_MODEL", str(_piper_voice_dir(tmp_path)))
+    ok, msg = tts_backend.SherpaOnnxBackend.is_available()
+    assert ok is True, msg
+
+
+def test_tts_sherpa_rejects_ambiguous_onnx_dir(monkeypatch, tmp_path):
+    monkeypatch.setitem(sys.modules, "sherpa_onnx", types.ModuleType("sherpa_onnx"))
+    (tmp_path / "a.onnx").write_bytes(b"")
+    (tmp_path / "b.onnx").write_bytes(b"")
+    monkeypatch.setenv("OMNIVOICE_SHERPA_MODEL", str(tmp_path))
+    ok, msg = tts_backend.SherpaOnnxBackend.is_available()
+    assert ok is False
+    assert "model.onnx" in msg
+
+
+def test_tts_sherpa_prefers_model_onnx(tmp_path):
+    (tmp_path / "model.onnx").write_bytes(b"")
+    (tmp_path / "other.onnx").write_bytes(b"")
+    assert tts_backend._sherpa_model_file(str(tmp_path)) == str(tmp_path / "model.onnx")
+
+
+def test_tts_sherpa_load_passes_piper_and_lexicon_files(monkeypatch, tmp_path):
+    # The VITS config must carry espeak-ng-data (Piper), lexicon.txt and dict
+    # (lexicon models) when the release ships them; sherpa-onnx cannot
+    # tokenize text without them.
+    seen = {}
+    fake = types.ModuleType("sherpa_onnx")
+    fake.OfflineTtsVitsModelConfig = lambda **kw: seen.setdefault("vits", kw)
+    fake.OfflineTtsModelConfig = lambda **kw: kw
+    fake.OfflineTtsConfig = lambda **kw: kw
+    fake.OfflineTts = lambda cfg: object()
+    monkeypatch.setitem(sys.modules, "sherpa_onnx", fake)
+
+    (tmp_path / "piper").mkdir()
+    piper = _piper_voice_dir(tmp_path / "piper")
+    monkeypatch.setenv("OMNIVOICE_SHERPA_MODEL", str(piper))
+    tts_backend.SherpaOnnxBackend()._ensure_loaded()
+    assert seen["vits"]["model"] == str(piper / "tr_TR-dfki-medium.onnx")
+    assert seen["vits"]["data_dir"] == str(piper / "espeak-ng-data")
+    assert "lexicon" not in seen["vits"]
+
+    lex = tmp_path / "melo"
+    lex.mkdir()
+    (lex / "model.onnx").write_bytes(b"")
+    (lex / "tokens.txt").write_text("_ 0\n")
+    (lex / "lexicon.txt").write_text("a a\n")
+    (lex / "dict").mkdir()
+    seen.clear()
+    monkeypatch.setenv("OMNIVOICE_SHERPA_MODEL", str(lex))
+    tts_backend.SherpaOnnxBackend()._ensure_loaded()
+    assert seen["vits"]["lexicon"] == str(lex / "lexicon.txt")
+    assert seen["vits"]["dict_dir"] == str(lex / "dict")
+    assert "data_dir" not in seen["vits"]
+
+
 def test_tts_sherpa_setup_snippet_registered():
     # The Compat Matrix's copy-paste setup line must exist for the now
     # path-gated engine (parity with Confucius4/dots/MOSS).
