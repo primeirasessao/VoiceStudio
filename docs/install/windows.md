@@ -120,6 +120,9 @@ unlisted Radeon hardware and the Ryzen AI NPU are outside this recipe.
 Engines with their own runtime remain separate: [audio.cpp](../engines/audio-cpp.md)
 can use its Vulkan build, subject to its own installation/capability checks.
 Linux ROCm setup remains documented in [linux.md](linux.md#amd-gpu-rocm).
+Unsupported community alternative: a WSL2 distro with ROCm 7.2.4 and AMD's
+`librocdxg` bridge, validated on an RX 7800 XT with the `v0.5.6` tag, is
+recorded in [wsl-amd-rocm.md](wsl-amd-rocm.md).
 
 **Settings → Performance → GPU acceleration** shows exactly what applies to your
 machine: the GPUs Windows reports, which PyTorch build is installed, and a
