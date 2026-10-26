@@ -79,9 +79,15 @@ final class MaintainerCardScreens: XCTestCase {
             XCTAssertTrue(visible.isHittable, login)
             XCTAssertGreaterThanOrEqual(visible.frame.height + 0.001, 44)
         }
-        let bottomRow = app.descendants(matching: .any)["home.contributor.psiberfunk"].firstMatch
-        XCTAssertGreaterThan(bottomRow.frame.minY, other.frame.minY)
-        XCTAssertLessThanOrEqual(max(bottomRow.frame.maxY, subtitle.frame.maxY) - min(wordmark.frame.minY, credit.frame.minY), 180)
+        // The two-row LazyHGrid fills rows before starting the next column:
+        // kevin9327 and jaketame share a column, while psiberfunk starts the
+        // next column on the SAME row as kevin9327. Checking psiberfunk's Y
+        // against kevin9327 incorrectly fails on the expected compact layout.
+        let secondRow = app.descendants(matching: .any)["home.contributor.jaketame"].firstMatch
+        let nextColumn = app.descendants(matching: .any)["home.contributor.psiberfunk"].firstMatch
+        XCTAssertGreaterThan(secondRow.frame.minY, other.frame.minY)
+        XCTAssertGreaterThan(nextColumn.frame.minX, other.frame.minX)
+        XCTAssertLessThanOrEqual(max(secondRow.frame.maxY, subtitle.frame.maxY) - min(wordmark.frame.minY, credit.frame.minY), 180)
         let compact = XCTAttachment(screenshot: app.screenshot())
         compact.name = "Home-compact-hero"; compact.lifetime = .keepAlways; add(compact)
         for (login, name, role, website, social) in [
