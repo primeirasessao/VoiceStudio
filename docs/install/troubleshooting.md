@@ -1470,7 +1470,7 @@ reconnecting automatically; the workspace stays usable.
   runtime). If the folder is inside OneDrive, Dropbox, iCloud Drive or Google
   Drive, move the checkout to a plain local folder first: online-only
   placeholders and file locking break the Python environment. The same applies to `error loading dynamically imported module: http://localhost:3902/@fs/…/node_modules/.vite/deps/…` from a dev server running inside OneDrive (installed builds never load from a dev server).
-- **`EPERM: operation not permitted, rename …\.previous-backend`** — a scanner or OneDrive held the runtime folder while VoiceStudio refreshed it. The app retries for about 10 s, then updates the files in place; if it still fails, exclude the runtime folder from antivirus and quit any VoiceStudio left in Task Manager.
+- **`EPERM: operation not permitted, rename …\.previous-backend`** or **`… rename …\.incoming-backend -> …\backend`** — a scanner, OneDrive or a VoiceStudio backend still running held the runtime folder while VoiceStudio refreshed it. The app retries each rename, copy and cleanup step for about 10 s, then updates the files in place. If a file stays locked through all of that, setup says **Another program is using VoiceStudio's files**: pause OneDrive (or other sync apps), exclude the runtime folder from antivirus, quit any VoiceStudio left in Task Manager, then press Retry.
 
 A native crash (`3221225477`, `-1073741819`) right after pressing Generate
 shortly after launch was caused by the startup preload and the first generation
@@ -1521,6 +1521,15 @@ The import verification now prints `VOICESTUDIO_IMPORT=<module>` before loading
 each runtime module, and a crash names the module in the error (`the import
 check stopped while importing "<module>"`). Include that line from the setup log
 in your report: the last `VOICESTUDIO_IMPORT=` line is the module that crashed.
+
+If that module is `sentencepiece` (or another C++ library) and the system's
+Visual C++ runtime is older than 14.40, setup now says so: **This Windows
+system's Microsoft Visual C++ Redistributable (x64) is too old**, with the
+`MSVCP140.dll` path and version it found. Newer wheels such as sentencepiece
+0.2.2 are built with Visual Studio 2022 17.10 or later and crash with
+`3221225477` against an older `MSVCP140.dll`. Install the latest
+[Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+and press Retry; reinstalling the Python packages cannot update a system library.
 
 ### "Backend exited unexpectedly (exit code 3221225477)" while loading a model
 

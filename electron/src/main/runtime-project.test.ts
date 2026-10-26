@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile, statfs } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile, statfs } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { downloadRuntimeInstaller } from './runtime-download';
@@ -11,6 +11,10 @@ import {
   promoteLegacyRuntimeCaches,
   CUDNN8_COMPAT_PIN,
   MISSING_SYSTEM_LIBRARY_CODE,
+  OUTDATED_SYSTEM_LIBRARY_CODE,
+  RUNTIME_FILES_LOCKED_CODE,
+  msvcp140Outdated,
+  parseNativeDiagnosis,
   NATIVE_DIAGNOSTIC_PREFIX,
   ROCM_TORCH_INDEX,
   ROCM_TORCH_PINS,
@@ -702,6 +706,67 @@ describe('packaged runtime setup', () => {
     expect(existsSync(join(project, 'backend', 'obsolete.py'))).toBe(false);
     expect(existsSync(join(project, '.incoming-backend'))).toBe(false);
   });
+  it('updates in place when a locked .previous folder blocks the swap (#3409)', async () => {
+    const { bundle, project } = await fixture();
+    await stageRuntimeSources(bundle, project);
+    await writeFile(join(bundle, 'backend', 'main.py'), 'new');
+    const previous = join(project, '.previous-backend');
+    const lockedRm = (async (
+      path: Parameters<typeof rm>[0],
+      options?: Parameters<typeof rm>[1],
+    ) => {
+      if (path === previous) throw Object.assign(new Error('EPERM: unlink'), { code: 'EPERM' });
+      return rm(path, options);
+    }) as typeof rm;
+    const rename = vi.fn(async (_from: string, _to: string) => {});
+    await stageRuntimeSources(bundle, project, rename, {
+      fs: { cp, rm: lockedRm },
+      retry: { platform: 'win32', sleep: async () => {} },
+    });
+    expect(await readFile(join(project, 'backend', 'main.py'), 'utf8')).toBe('new');
+    expect(rename.mock.calls.some(([from]) => String(from).includes('backend'))).toBe(false);
+  });
+  it('retries a copy that a scanner briefly blocks before giving up (#3409)', async () => {
+    const { bundle, project } = await fixture();
+    await stageRuntimeSources(bundle, project);
+    await writeFile(join(bundle, 'backend', 'main.py'), 'new');
+    const locked = async () => {
+      throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+    };
+    let blocked = 0;
+    const flakyCp = (async (...args: Parameters<typeof cp>) => {
+      if (args[1] === join(project, 'backend') && blocked++ < 2) {
+        throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
+      }
+      return cp(...args);
+    }) as typeof cp;
+    await stageRuntimeSources(bundle, project, locked, {
+      fs: { cp: flakyCp, rm },
+      retry: { platform: 'win32', sleep: async () => {} },
+    });
+    expect(blocked).toBe(3);
+    expect(await readFile(join(project, 'backend', 'main.py'), 'utf8')).toBe('new');
+  });
+  it('names the lock and the fix when a folder stays locked through every retry (#3409)', async () => {
+    const { bundle, project } = await fixture();
+    await stageRuntimeSources(bundle, project);
+    const locked = async () => {
+      throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+    };
+    const lockedCp = (async (...args: Parameters<typeof cp>) => {
+      if (args[1] === join(project, 'backend')) {
+        throw Object.assign(new Error('EPERM: operation not permitted, open'), { code: 'EPERM' });
+      }
+      return cp(...args);
+    }) as typeof cp;
+    const failure = stageRuntimeSources(bundle, project, locked, {
+      fs: { cp: lockedCp, rm },
+      retry: { platform: 'win32', sleep: async () => {} },
+    });
+    await expect(failure).rejects.toMatchObject({ code: RUNTIME_FILES_LOCKED_CODE });
+    await expect(failure).rejects.toThrow(/OneDrive.*press Retry/s);
+    expect(existsSync(join(project, '.incoming-backend'))).toBe(false);
+  });
   it('still fails on a rename error that is not a lock', async () => {
     const { bundle, project } = await fixture();
     const broken = async () => {
@@ -1093,5 +1158,88 @@ describe('regional PyPI mirror for the frozen sync (#3444)', () => {
     expect(await runtimeCompatible(bundle, project)).toBe(true);
     await writeFile(join(project, 'uv.lock'), LOCK.replace('sha256:e943', 'sha256:0000'));
     expect(await runtimeCompatible(bundle, project)).toBe(false);
+  });
+});
+
+describe('outdated Visual C++ runtime behind a native import crash (#3293)', () => {
+  const crash = () =>
+    Object.assign(new Error('Runtime setup exited with code 3221225477'), {
+      code: 3221225477,
+      stdout: 'VOICESTUDIO_IMPORT=fastapi\nVOICESTUDIO_IMPORT=sentencepiece\n',
+    });
+  const diagnosis = (version: string) =>
+    `${NATIVE_DIAGNOSTIC_PREFIX}${JSON.stringify({
+      missing_system_libraries: [],
+      extension_present: true,
+      msvcp140: { path: 'C:\\Windows\\System32\\MSVCP140.dll', version },
+    })}\n`;
+  function runner(version: string, failure: () => Error) {
+    return vi.fn(async (_command: string, args: string[]) => {
+      if (args[0] !== '-c') return undefined;
+      if (args[1] === RUNTIME_IMPORT_PROBE) throw failure();
+      if (args[1] === RUNTIME_NATIVE_DIAGNOSTIC_PROBE) return diagnosis(version);
+      return undefined;
+    });
+  }
+
+  it('compares MSVCP140 versions against the 14.40 floor', () => {
+    expect(msvcp140Outdated('14.29.30133.0')).toBe(true);
+    expect(msvcp140Outdated('14.36.32532.0')).toBe(true);
+    expect(msvcp140Outdated('14.40.33810.0')).toBe(false);
+    expect(msvcp140Outdated('14.44.35211.0')).toBe(false);
+    expect(msvcp140Outdated(undefined)).toBe(false);
+    expect(msvcp140Outdated('garbage')).toBe(false);
+  });
+
+  it('reads the loaded MSVCP140 from the diagnostic and tolerates its absence', () => {
+    expect(parseNativeDiagnosis(diagnosis('14.29.30133.0'))?.msvcp140).toEqual({
+      path: 'C:\\Windows\\System32\\MSVCP140.dll',
+      version: '14.29.30133.0',
+    });
+    expect(
+      parseNativeDiagnosis(
+        `${NATIVE_DIAGNOSTIC_PREFIX}${JSON.stringify({ missing_system_libraries: [] })}`,
+      )?.msvcp140,
+    ).toBeNull();
+    expect(RUNTIME_NATIVE_DIAGNOSTIC_PROBE).toContain('GetFileVersionInfoW');
+  });
+
+  it('explains an access violation on an outdated runtime instead of a bare exit code', async () => {
+    const { bundle, project } = await fixture();
+    const failure = installRuntime(
+      bundle,
+      project,
+      'uv',
+      runner('14.29.30133.0', crash),
+      new AbortController().signal,
+    );
+    await expect(failure).rejects.toMatchObject({ code: OUTDATED_SYSTEM_LIBRARY_CODE });
+    await expect(failure).rejects.toThrow(/"sentencepiece".*14\.29\.30133\.0.*Visual C\+\+/s);
+    expect(await runtimeReady(bundle, project)).toBe(false);
+  });
+
+  it('keeps the plain import failure when the runtime is current or the error is not a crash', async () => {
+    const current = await fixture();
+    await expect(
+      installRuntime(
+        current.bundle,
+        current.project,
+        'uv',
+        runner('14.44.35211.0', crash),
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow('the import check stopped while importing "sentencepiece"');
+    const notACrash = await fixture();
+    await expect(
+      installRuntime(
+        notACrash.bundle,
+        notACrash.project,
+        'uv',
+        runner('14.29.30133.0', () =>
+          Object.assign(new Error("No module named 'sentencepiece'"), { code: 1, stdout: '' }),
+        ),
+        new AbortController().signal,
+      ),
+    ).rejects.not.toMatchObject({ code: OUTDATED_SYSTEM_LIBRARY_CODE });
   });
 });

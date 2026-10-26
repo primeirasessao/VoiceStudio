@@ -19,7 +19,12 @@ import {
 import { clearCtranslate2ExecutableStack } from '../../scripts/native-compat.mjs';
 export { clearCtranslate2ExecutableStack } from '../../scripts/native-compat.mjs';
 import { downloadProxyEnv } from './proxy-env';
-import { DIRECTORY_RENAME, renameWithRetry } from './rename-retry';
+import {
+  DIRECTORY_RENAME,
+  renameWithRetry,
+  retryTransient,
+  type RenameRetryOptions,
+} from './rename-retry';
 import { downloadRuntimeInstaller } from './runtime-download';
 import { asciiSafePthFiles } from './pth-ascii';
 import { pruneInterruptedUvDownloads, setupDownloadHosts } from './setup-downloads';
@@ -118,6 +123,21 @@ export const WINDOWS_TORCH_SYSTEM_LIBRARIES = [
 export const NATIVE_DIAGNOSTIC_PREFIX = 'VOICESTUDIO_NATIVE_DIAGNOSTIC=';
 /** Error code for "a system library the native extensions need is missing". */
 export const MISSING_SYSTEM_LIBRARY_CODE = 'MISSING_SYSTEM_LIBRARY';
+/** Error code for "the Visual C++ runtime this host loads is too old for the wheels". */
+export const OUTDATED_SYSTEM_LIBRARY_CODE = 'OUTDATED_SYSTEM_LIBRARY';
+/**
+ * The oldest `MSVCP140.dll` that wheels built with Visual Studio 2022 17.10 or
+ * later can run against. 17.10 made `std::mutex`'s constructor `constexpr`, so
+ * a module built with it locks a mutex an older `MSVCP140.dll` never set up and
+ * dies with an access violation (0xC0000005) instead of an ImportError.
+ * sentencepiece 0.2.2's Windows wheel is built with MSVC 14.51 and imports
+ * `_Mtx_lock` from `MSVCP140.dll`, so a Windows install whose system Visual C++
+ * runtime predates 14.40 crashes on `import sentencepiece` with no traceback
+ * (#3293, #2942). No Python wheel can update a system DLL.
+ */
+export const MIN_MSVCP140_VERSION = [14, 40] as const;
+/** Windows exit status for an access violation, unsigned and signed. */
+const ACCESS_VIOLATION_EXIT_CODES = new Set<unknown>([3221225477, -1073741819]);
 const RUNTIME_IMPORT_MODULES = [
   'fastapi',
   'uvicorn',
@@ -555,11 +575,14 @@ export interface NativeRuntimeDiagnosis {
   missingSystemLibraries: string[];
   /** The torchaudio native extension exists in the environment. */
   extensionPresent: boolean;
+  /** The `MSVCP140.dll` the interpreter loads, when Windows could report it. */
+  msvcp140?: { path: string; version: string } | null;
 }
 
 const EMPTY_DIAGNOSIS: NativeRuntimeDiagnosis = {
   missingSystemLibraries: [],
   extensionPresent: true,
+  msvcp140: null,
 };
 
 /**
@@ -574,6 +597,7 @@ export const RUNTIME_NATIVE_DIAGNOSTIC_PROBE = [
   'import ctypes, json, os, sys, sysconfig',
   `libraries = ${JSON.stringify([...WINDOWS_TORCH_SYSTEM_LIBRARIES])}`,
   'missing = []',
+  'msvcp = None',
   "if sys.platform == 'win32':",
   '    for name in libraries:',
   '        try:',
@@ -583,9 +607,28 @@ export const RUNTIME_NATIVE_DIAGNOSTIC_PROBE = [
   '    purelib = sysconfig.get_paths()["purelib"]',
   '    extension = os.path.join(purelib, "torchaudio", "lib", "libtorchaudio.pyd")',
   '    present = os.path.isfile(extension)',
+  // Which MSVCP140.dll this interpreter actually loads, and its file version:
+  // an outdated system copy crashes newer C++ wheels without a traceback (#3293).
+  '    try:',
+  '        from ctypes import wintypes',
+  '        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)',
+  '        kernel32.GetModuleFileNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, wintypes.DWORD]',
+  '        path_buffer = ctypes.create_unicode_buffer(32768)',
+  '        if kernel32.GetModuleFileNameW(ctypes.WinDLL("msvcp140.dll")._handle, path_buffer, 32768):',
+  '            path = path_buffer.value',
+  '            version_dll = ctypes.WinDLL("version")',
+  '            size = version_dll.GetFileVersionInfoSizeW(path, None)',
+  '            data = ctypes.create_string_buffer(size)',
+  '            block = ctypes.c_void_p()',
+  '            length = wintypes.UINT()',
+  '            if size and version_dll.GetFileVersionInfoW(path, 0, size, data) and version_dll.VerQueryValueW(data, "\\\\", ctypes.byref(block), ctypes.byref(length)):',
+  '                fixed = ctypes.cast(block, ctypes.POINTER(wintypes.DWORD * 4)).contents',
+  '                msvcp = {"path": path, "version": "%d.%d.%d.%d" % (fixed[2] >> 16, fixed[2] & 0xFFFF, fixed[3] >> 16, fixed[3] & 0xFFFF)}',
+  '    except Exception:',
+  '        msvcp = None',
   'else:',
   '    present = True',
-  `print(${JSON.stringify(NATIVE_DIAGNOSTIC_PREFIX)} + json.dumps({"missing_system_libraries": missing, "extension_present": present}))`,
+  `print(${JSON.stringify(NATIVE_DIAGNOSTIC_PREFIX)} + json.dumps({"missing_system_libraries": missing, "extension_present": present, "msvcp140": msvcp}))`,
 ].join('\n');
 
 /** Read the diagnostic marker out of the probe's output. */
@@ -599,7 +642,9 @@ export function parseNativeDiagnosis(output: string | void): NativeRuntimeDiagno
     const parsed = JSON.parse(line.slice(NATIVE_DIAGNOSTIC_PREFIX.length)) as {
       missing_system_libraries?: unknown;
       extension_present?: unknown;
+      msvcp140?: { path?: unknown; version?: unknown } | null;
     };
+    const msvcp = parsed.msvcp140;
     return {
       missingSystemLibraries: Array.isArray(parsed.missing_system_libraries)
         ? parsed.missing_system_libraries.filter(
@@ -607,6 +652,10 @@ export function parseNativeDiagnosis(output: string | void): NativeRuntimeDiagno
           )
         : [],
       extensionPresent: parsed.extension_present !== false,
+      msvcp140:
+        msvcp && typeof msvcp.path === 'string' && typeof msvcp.version === 'string'
+          ? { path: msvcp.path, version: msvcp.version }
+          : null,
     };
   } catch {
     return null;
@@ -641,6 +690,43 @@ export function missingSystemLibraryError(libraries: readonly string[]): Error {
         'VoiceStudio; reinstalling the Python packages cannot supply a system library.',
     ),
     { code: MISSING_SYSTEM_LIBRARY_CODE, missingSystemLibraries: [...libraries] },
+  );
+}
+
+/** True when a reported `MSVCP140.dll` version predates {@link MIN_MSVCP140_VERSION}. */
+export function msvcp140Outdated(version: string | undefined | null): boolean {
+  const [major, minor] = String(version ?? '')
+    .split('.')
+    .map((part) => Number.parseInt(part, 10));
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false;
+  const [minMajor, minMinor] = MIN_MSVCP140_VERSION;
+  return major < minMajor || (major === minMajor && minor < minMinor);
+}
+
+/**
+ * The outdated Visual C++ runtime behind a native crash, if that is what it was.
+ *
+ * Only an access violation is attributed to it: an ordinary ImportError on a
+ * host with an old runtime has some other cause, and blaming the runtime would
+ * send the user to the wrong fix.
+ */
+export function outdatedSystemLibraryError(
+  failure: unknown,
+  diagnosis: NativeRuntimeDiagnosis,
+): Error | null {
+  const code = (failure as { code?: unknown } | null)?.code;
+  if (!ACCESS_VIOLATION_EXIT_CODES.has(code)) return null;
+  const msvcp = diagnosis.msvcp140;
+  if (!msvcp || !msvcp140Outdated(msvcp.version)) return null;
+  const module = lastImportAttempted((failure as { stdout?: unknown }).stdout);
+  return Object.assign(
+    new Error(
+      `${module ? `Importing "${module}" crashed` : 'A native import crashed'} because this Windows ` +
+        `system's Visual C++ runtime is outdated (${scrubText(msvcp.path)} is version ${msvcp.version}; ` +
+        `${MIN_MSVCP140_VERSION.join('.')} or newer is needed). Install the latest Microsoft Visual C++ ` +
+        'Redistributable (x64) and press Retry; reinstalling the Python packages cannot update a system library.',
+    ),
+    { code: OUTDATED_SYSTEM_LIBRARY_CODE, stdout: (failure as { stdout?: unknown }).stdout },
   );
 }
 
@@ -706,13 +792,28 @@ export async function runtimeCompatible(bundle: string, project: string): Promis
 }
 
 const LOCKED = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const isLocked = (error: unknown) =>
+  LOCKED.has((error as NodeJS.ErrnoException | null)?.code ?? '');
+/** Error code for "a runtime folder stayed locked by another program through every retry". */
+export const RUNTIME_FILES_LOCKED_CODE = 'RUNTIME_FILES_LOCKED';
+
+/** The filesystem calls staging needs; injectable so lock handling is testable. */
+export interface StageFileSystem {
+  cp: typeof cp;
+  rm: typeof rm;
+}
+export interface StageOptions {
+  fs?: StageFileSystem;
+  /** Retry schedule for locked copy/remove steps (renames use `renameDirectory`'s own). */
+  retry?: RenameRetryOptions;
+}
 
 /** Mirror `source` onto `target` file by file, for a folder Windows will not rename
  *  (a scanner, OneDrive or a lingering backend holds a handle inside it, #3010, #2669).
  *  Files can be overwritten where a folder rename cannot; files the new bundle no
  *  longer ships are pruned best-effort. */
-async function mirrorInPlace(source: string, target: string): Promise<void> {
-  await cp(source, target, { recursive: true, force: true });
+async function mirrorInPlace(source: string, target: string, fs: StageFileSystem): Promise<void> {
+  await fs.cp(source, target, { recursive: true, force: true });
   const walk = async (rel: string): Promise<void> => {
     for (const entry of await readdir(join(target, rel), { withFileTypes: true })) {
       const next = join(rel, entry.name);
@@ -720,52 +821,94 @@ async function mirrorInPlace(source: string, target: string): Promise<void> {
         () => true,
         () => false,
       );
-      if (!kept) await rm(join(target, next), { recursive: true, force: true }).catch(() => {});
+      if (!kept) await fs.rm(join(target, next), { recursive: true, force: true }).catch(() => {});
       else if (entry.isDirectory()) await walk(next);
     }
   };
   await walk('').catch(() => {});
 }
 
-/** Replace only bundled code. The interpreter, models and user data are never removed. */
+/** A lock that outlasted every retry and the in-place fallback: say what holds it and what to do. */
+function runtimeFilesLockedError(target: string, cause: unknown): Error {
+  return Object.assign(
+    new Error(
+      `Windows would not let VoiceStudio update ${target} because another program has a file in it ` +
+        'open (OneDrive or another sync app, antivirus, or a VoiceStudio backend that is still ' +
+        'running). Close that program or pause syncing, then press Retry. ' +
+        `(${String((cause as Error | null)?.message ?? cause)})`,
+    ),
+    { code: RUNTIME_FILES_LOCKED_CODE, cause },
+  );
+}
+
+/**
+ * Replace only bundled code. The interpreter, models and user data are never removed.
+ *
+ * Every step a Windows file lock can block is retried with backoff, and a folder
+ * that still cannot be swapped is updated in place file by file (#3409, #3010).
+ */
 export async function stageRuntimeSources(
   bundle: string,
   project: string,
   renameDirectory: typeof renameWithRetry = renameWithRetry,
+  { fs = { cp, rm }, retry = DIRECTORY_RENAME }: StageOptions = {},
 ): Promise<void> {
+  const persist = <T>(action: () => Promise<T>) => retryTransient(action, retry);
+  const discard = (path: string) =>
+    persist(() => fs.rm(path, { recursive: true, force: true })).then(
+      () => true,
+      (error: unknown) => {
+        if (!isLocked(error)) throw error;
+        return false;
+      },
+    );
   await mkdir(project, { recursive: true });
   for (const name of SOURCES) {
     const target = join(project, name);
     await mkdir(dirname(target), { recursive: true });
     const token = name.replaceAll('/', '-');
-    const pending = join(project, `.incoming-${token}`);
+    // A locked leftover from an earlier attempt is skipped, never merged into.
+    let pending = join(project, `.incoming-${token}`);
+    if (!(await discard(pending))) pending = `${pending}-${randomUUID().slice(0, 8)}`;
     const previous = join(project, `.previous-${token}`);
-    await rm(pending, { recursive: true, force: true });
-    await cp(join(bundle, name), pending, {
-      recursive: true,
-      filter: (source) => !source.split(/[\\/]/).includes('__pycache__'),
-    });
-    await rm(previous, { recursive: true, force: true });
     try {
-      let moved = false;
-      try {
-        await renameDirectory(target, previous, DIRECTORY_RENAME);
-        moved = true;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      await persist(() =>
+        fs.cp(join(bundle, name), pending, {
+          recursive: true,
+          force: true,
+          filter: (source) => !source.split(/[\\/]/).includes('__pycache__'),
+        }),
+      );
+      let swapped = false;
+      // A locked `.previous-*` cannot receive the old folder: update in place instead.
+      if (await discard(previous)) {
+        try {
+          let moved = false;
+          try {
+            await renameDirectory(target, previous, DIRECTORY_RENAME);
+            moved = true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+          try {
+            await renameDirectory(pending, target, DIRECTORY_RENAME);
+          } catch (error) {
+            if (moved) await renameDirectory(previous, target, DIRECTORY_RENAME);
+            throw error;
+          }
+          swapped = true;
+        } catch (error) {
+          if (!isLocked(error)) throw error;
+        }
       }
-      try {
-        await renameDirectory(pending, target, DIRECTORY_RENAME);
-      } catch (error) {
-        if (moved) await renameDirectory(previous, target, DIRECTORY_RENAME);
-        throw error;
-      }
+      if (!swapped) await persist(() => mirrorInPlace(pending, target, fs));
     } catch (error) {
-      if (!LOCKED.has((error as NodeJS.ErrnoException).code ?? '')) throw error;
-      await mirrorInPlace(pending, target);
+      if (isLocked(error)) throw runtimeFilesLockedError(target, error);
+      throw error;
+    } finally {
+      await fs.rm(pending, { recursive: true, force: true }).catch(() => {});
+      await fs.rm(previous, { recursive: true, force: true }).catch(() => {});
     }
-    await rm(pending, { recursive: true, force: true }).catch(() => {});
-    await rm(previous, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -1067,7 +1210,9 @@ export async function installRuntime(
       if (diagnosis.missingSystemLibraries.length) {
         throw missingSystemLibraryError(diagnosis.missingSystemLibraries);
       }
-      throw importFailure(error);
+      // An outdated system Visual C++ runtime crashes newer C++ wheels such as
+      // sentencepiece 0.2.2 with an access violation; say so and how to fix it (#3293).
+      throw outdatedSystemLibraryError(error, diagnosis) ?? importFailure(error);
     }
   }
   signal.throwIfAborted();

@@ -2161,6 +2161,8 @@
     "setup_unsupported_platform": "لا يمكن لجهاز Mac هذا (Intel) تشغيل الواجهة الخلفية المحلية للذكاء الاصطناعي — لا يوفّر PyTorch حزم macOS Intel. اتصل بواجهة خلفية بعيدة أدناه؛ لا حاجة إلى تثبيت محلي.",
     "setup_wrong_architecture": "هذه نسخة Intel (x64) من VoiceStudio تعمل عبر Rosetta على جهاز Mac بمعالج Apple Silicon، لذلك لا يمكن تثبيت خادم الذكاء الاصطناعي المحلي. أغلق التطبيق، وثبّت ملف DMG الخاص بـ Apple Silicon (arm64) فوقه، ثم أعد فتحه — ستبقى أصواتك ومشاريعك محفوظة.",
     "setup_missing_system_library": "ينقص هذا النظام من Windows حزمة Microsoft Visual C++ 2015-2022 Redistributable (x64) التي يحتاجها امتداد الصوت في PyTorch. ثبّتها من Microsoft ثم اضغط «إعادة المحاولة».",
+    "setup_outdated_system_library": "حزمة Microsoft Visual C++ Redistributable (x64) على نظام Windows هذا قديمة جدًا، لذا تتعطل مكتبة كلام عند تحميلها. ثبّت أحدث إصدار من Microsoft ثم اضغط «إعادة المحاولة».",
+    "setup_files_locked": "يستخدم برنامج آخر ملفات VoiceStudio (OneDrive أو تطبيق مزامنة آخر، أو برنامج مكافحة الفيروسات، أو خادم VoiceStudio لا يزال يعمل). أغلقه أو أوقف المزامنة مؤقتًا ثم اضغط «إعادة المحاولة».",
     "download_apple_silicon": "تنزيل نسخة Apple Silicon",
     "ready": "المحرك جاهز",
     "show_log": "إظهار السجل",
