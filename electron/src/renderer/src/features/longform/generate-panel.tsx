@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { LongformActivityCard } from '@/components/longform-activity-card';
 import { GenerationProgress } from './generation-progress';
 import type { GenerateBlocker } from './generate-blocker';
 import type { AudiobookRenderChapter } from './longform-session';
@@ -76,6 +77,12 @@ export function GeneratePanel({
           />
         </div>
       )}
+      {session.active &&
+        !active && (
+          // The other longform page is rendering: show it and its Stop here
+          // instead of a refusal the user can only wait out.
+          <LongformActivityCard className="shrink-0" />
+        )}
       {status && (
         <p
           id="generate-status"

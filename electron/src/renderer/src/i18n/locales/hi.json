@@ -1888,6 +1888,7 @@
     "resume_failed": "ऑडियोबुक फिर से शुरू नहीं की जा सकी: {{message}}",
     "open_cache_failed": "अध्याय कैश नहीं खोला जा सका",
     "progress_summary": "{{total}} में से {{current}} अध्याय संश्लेषित हो रहे हैं",
+    "show_progress": "प्रगति देखें",
     "eta": "~{{time}} शेष",
     "eta_estimating": "शेष समय का अनुमान लगाया जा रहा है…",
     "realtime": "{{rate}}× रीयलटाइम",

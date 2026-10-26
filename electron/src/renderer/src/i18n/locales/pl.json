@@ -1894,6 +1894,7 @@
     "resume_failed": "Nie można wznowić książki audio: {{message}}",
     "open_cache_failed": "Nie można otworzyć pamięci podręcznej rozdziałów",
     "progress_summary": "Synteza {{current}} z {{total}} rozdziałów",
+    "show_progress": "Pokaż postęp",
     "eta": "~{{time}} pozostało",
     "eta_estimating": "Szacowanie pozostałego czasu…",
     "realtime": "{{rate}}× czas rzeczywisty",

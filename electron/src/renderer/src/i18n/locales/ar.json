@@ -1900,6 +1900,7 @@
     "resume_failed": "تعذّر استئناف الكتاب الصوتي: {{message}}",
     "open_cache_failed": "تعذّر فتح ذاكرة التخزين المؤقت للفصول",
     "progress_summary": "جارٍ تركيب {{current}} من {{total}} فصلاً",
+    "show_progress": "عرض التقدم",
     "eta": "~{{time}} متبقٍ",
     "eta_estimating": "جارٍ تقدير الوقت المتبقي…",
     "realtime": "{{rate}}× الوقت الفعلي",

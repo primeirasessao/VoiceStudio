@@ -1888,6 +1888,7 @@
     "resume_failed": "Không thể tiếp tục sách nói: {{message}}",
     "open_cache_failed": "Không thể mở bộ nhớ đệm chương",
     "progress_summary": "Đang tổng hợp {{current}} trên {{total}} chương",
+    "show_progress": "Xem tiến độ",
     "eta": "còn ~{{time}}",
     "eta_estimating": "Đang ước tính thời gian còn lại…",
     "realtime": "{{rate}}× thời gian thực",

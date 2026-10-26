@@ -2030,6 +2030,7 @@
     "resume_failed": "Could not resume the audiobook: {{message}}",
     "open_cache_failed": "Could not open the chapter cache",
     "progress_summary": "Synthesizing {{current}} of {{total}} chapters",
+    "show_progress": "Show progress",
     "eta": "~{{time}} left",
     "eta_estimating": "Estimating time left…",
     "realtime": "{{rate}}× realtime",

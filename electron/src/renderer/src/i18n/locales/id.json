@@ -1888,6 +1888,7 @@
     "resume_failed": "Tidak dapat melanjutkan buku audio: {{message}}",
     "open_cache_failed": "Tidak dapat membuka cache bab",
     "progress_summary": "Mensintesis {{current}} dari {{total}} bab",
+    "show_progress": "Lihat progres",
     "eta": "~{{time}} tersisa",
     "eta_estimating": "Memperkirakan sisa waktu…",
     "realtime": "{{rate}}× waktu nyata",

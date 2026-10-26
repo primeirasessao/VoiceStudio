@@ -1888,6 +1888,7 @@
     "resume_failed": "Das Hörbuch konnte nicht fortgesetzt werden: {{message}}",
     "open_cache_failed": "Der Kapitel-Zwischenspeicher konnte nicht geöffnet werden",
     "progress_summary": "Synthetisiere {{current}} von {{total}} Kapiteln",
+    "show_progress": "Fortschritt anzeigen",
     "eta": "~{{time}} übrig",
     "eta_estimating": "Restzeit wird geschätzt…",
     "realtime": "{{rate}}× Echtzeit",

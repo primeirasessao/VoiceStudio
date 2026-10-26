@@ -1888,6 +1888,7 @@
     "resume_failed": "无法继续有声读物：{{message}}",
     "open_cache_failed": "无法打开章节缓存",
     "progress_summary": "正在合成第 {{current}}/{{total}} 章",
+    "show_progress": "查看进度",
     "eta": "剩余约 {{time}}",
     "eta_estimating": "正在估算剩余时间…",
     "realtime": "{{rate}}× 实时",

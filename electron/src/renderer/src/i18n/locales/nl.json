@@ -1888,6 +1888,7 @@
     "resume_failed": "Het luisterboek kon niet worden hervat: {{message}}",
     "open_cache_failed": "De hoofdstukcache kon niet worden geopend",
     "progress_summary": "{{current}} van {{total}} hoofdstukken aan het synthetiseren",
+    "show_progress": "Voortgang tonen",
     "eta": "~{{time}} resterend",
     "eta_estimating": "Resterende tijd schatten…",
     "realtime": "{{rate}}× realtime",

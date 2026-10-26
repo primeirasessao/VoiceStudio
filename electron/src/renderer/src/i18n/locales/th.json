@@ -1888,6 +1888,7 @@
     "resume_failed": "ไม่สามารถทำหนังสือเสียงต่อได้: {{message}}",
     "open_cache_failed": "ไม่สามารถเปิดแคชบทได้",
     "progress_summary": "กำลังสังเคราะห์บทที่ {{current}} จาก {{total}} บท",
+    "show_progress": "ดูความคืบหน้า",
     "eta": "เหลือ ~{{time}}",
     "eta_estimating": "กำลังประเมินเวลาที่เหลือ…",
     "realtime": "{{rate}}× เวลาจริง",

@@ -16,6 +16,7 @@ import { tr } from '@/lib/i18n-text';
 import { consumeLongformStream } from '@shared/utils/longformStream';
 import { storyToSpans } from '@shared/utils/storyToSpans';
 import { beginAppActivity } from '@/lib/app-activity';
+import { publishLongformActivity } from '@/lib/longform-activity';
 import { publicFailureFromEvent, type PublicFailure } from '@/lib/api/failure';
 import { parseProgressEvent, type RenderProgressSnapshot } from './render-eta';
 export type Mode = 'stories' | 'audiobook';
@@ -171,6 +172,26 @@ export const useLongformSession = () => useStore(longformSession);
 /** Fences document imports that finish after a new dub replaces the Stories draft. */
 export const storiesImportEpoch = { current: 0 };
 const patch = (value: Partial<Session>) => longformSession.setState((s) => ({ ...s, ...value }));
+/** Mirror the live render into the app-wide activity store (notifications, other page). */
+function publishActivity() {
+  const s = longformSession.state;
+  publishLongformActivity(
+    s.active
+      ? {
+          mode: s.active,
+          title: s.drafts[s.active].title,
+          stage: s.stage,
+          completed: s.completed,
+          total: s.total,
+          percent: Math.round(
+            s.progress ? s.progress.fraction * 100 : s.total ? (s.completed / s.total) * 100 : 0,
+          ),
+        }
+      : null,
+    s.active ? stopLongform : null,
+  );
+}
+const unsubscribeActivity = longformSession.subscribe(publishActivity);
 export function editLongform(mode: Mode, value: Partial<Draft>) {
   if (longformSession.state.active) return;
   updateDraft(mode, value);
@@ -187,6 +208,7 @@ if (import.meta.hot)
   import.meta.hot.dispose(() => {
     storage.flushPendingWrites();
     removeLifecycle();
+    unsubscribeActivity.unsubscribe();
     controller?.abort();
   });
 function updateDraft(mode: Mode, value: Partial<Draft>) {

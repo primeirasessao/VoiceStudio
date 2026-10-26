@@ -1894,6 +1894,7 @@
     "resume_failed": "Не вдалося продовжити аудіокнигу: {{message}}",
     "open_cache_failed": "Не вдалося відкрити кеш розділів",
     "progress_summary": "Синтез {{current}} з {{total}} розділів",
+    "show_progress": "Показати прогрес",
     "eta": "~{{time}} залишилось",
     "eta_estimating": "Оцінювання часу, що залишився…",
     "realtime": "{{rate}}× реального часу",

@@ -35,9 +35,8 @@ import {
 } from '@shared/utils/audiobookScript';
 import { BookSettings } from './book-settings';
 import { duplicateWords } from './book-options';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { DownloadIcon, ListIcon, SparklesIcon } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -53,6 +52,7 @@ import { ValidationWarnings, type ScriptWarning } from './validation-warnings';
 import { getBridge } from '@/components/bridge';
 import { useProfiles } from '@/hooks/use-profiles';
 import { apiJson, apiPath, describeError } from '@/lib/api/client';
+import { RenderRecovery } from './render-recovery';
 import { saveExport } from '@/lib/export-history';
 import { EngineLanguagePicker } from '@/features/clone/engine-language-picker';
 import { outputLanguageOptions } from './output-languages';
@@ -68,13 +68,6 @@ import {
 import { SAMPLE_AUDIOBOOK_SCRIPT } from '@shared/data/sampleAudiobook';
 import { useTtsReadiness } from '@/hooks/use-tts-readiness';
 const FORMATS = ['m4b', 'mp3'] as const;
-interface Recovery {
-  job_id: string;
-  type: string;
-  title: string;
-  chapters_done: number;
-  total_chapters: number;
-}
 export function LongformPage({ mode }: { mode: Mode }) {
   const { t } = useTranslation();
   const session = useLongformSession();
@@ -95,13 +88,6 @@ export function LongformPage({ mode }: { mode: Mode }) {
   const audiobookInput = useRef<HTMLTextAreaElement>(null);
   const locked = !!session.active || importing;
   const scriptLines = scriptSize(mode, draft);
-  const query = useQuery({
-    queryKey: ['longform-recovery'],
-    queryFn: ({ signal }) => apiJson<{ jobs: Recovery[] }>('/audiobook/jobs', { signal }),
-  });
-  useEffect(() => {
-    if (!session.active) void query.refetch();
-  }, [session.active]);
   const set = (value: Parameters<typeof editLongform>[1]) => editLongform(mode, value);
   const usable =
     mode === 'audiobook'
@@ -140,13 +126,21 @@ export function LongformPage({ mode }: { mode: Mode }) {
     duplicateLexicon: duplicateWords(draft.lexicon),
   });
   const generatePanel = (
-    <GeneratePanel
-      mode={mode}
-      session={session}
-      blocker={blocker}
-      onGenerate={() => void renderLongform(mode)}
-      onStop={stopLongform}
-    />
+    <div className="flex min-h-0 flex-col gap-3">
+      <RenderRecovery
+        mode={mode}
+        active={Boolean(session.active)}
+        disabled={locked || ttsBlocker !== null}
+        onResume={(jobId) => void renderLongform(mode, jobId)}
+      />
+      <GeneratePanel
+        mode={mode}
+        session={session}
+        blocker={blocker}
+        onGenerate={() => void renderLongform(mode)}
+        onStop={stopLongform}
+      />
+    </div>
   );
   const importFile = async (file: File) => {
     const importEpoch = storiesImportEpoch.current;
@@ -358,28 +352,6 @@ export function LongformPage({ mode }: { mode: Mode }) {
             onChange={set}
             onBusy={setImporting}
           />
-          {(query.data?.jobs || [])
-            .filter((job) => job.type === (mode === 'stories' ? 'longform' : 'audiobook'))
-            .map((job) => (
-              <div key={job.job_id} className="space-y-2 border-t border-border/50 pt-4 text-xs">
-                <h2 className="font-medium">{t('audiobook.recovery_title')}</h2>
-                <p>{job.title || t('audiobook.untitled')}</p>
-                <p>
-                  {t('audiobook.recovery_progress', {
-                    done: job.chapters_done,
-                    total: job.total_chapters,
-                  })}
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={locked || ttsBlocker !== null}
-                  onClick={() => void renderLongform(mode, job.job_id)}
-                >
-                  {t('common.resume')}
-                </Button>
-              </div>
-            ))}
         </SecondarySidebar>
         <section className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           <div className="mx-auto flex w-full max-w-6xl min-h-0 flex-1 flex-col gap-4 px-6 py-5">

@@ -1888,6 +1888,7 @@
     "resume_failed": "Sesli kitap sürdürülemedi: {{message}}",
     "open_cache_failed": "Bölüm önbelleği açılamadı",
     "progress_summary": "{{total}} bölümden {{current}} tanesi sentezleniyor",
+    "show_progress": "İlerlemeyi göster",
     "eta": "~{{time}} kaldı",
     "eta_estimating": "Kalan süre tahmin ediliyor…",
     "realtime": "{{rate}}× gerçek zamanlı",

@@ -1890,6 +1890,7 @@
     "resume_failed": "No se pudo reanudar el audiolibro: {{message}}",
     "open_cache_failed": "No se pudo abrir la caché de capítulos",
     "progress_summary": "Sintetizando {{current}} de {{total}} capítulos",
+    "show_progress": "Ver progreso",
     "eta": "~{{time}} restante",
     "eta_estimating": "Calculando el tiempo restante…",
     "realtime": "{{rate}}× tiempo real",

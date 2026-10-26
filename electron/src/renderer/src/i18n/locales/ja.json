@@ -1888,6 +1888,7 @@
     "resume_failed": "オーディオブックを再開できませんでした: {{message}}",
     "open_cache_failed": "章のキャッシュを開けませんでした",
     "progress_summary": "{{total}} 章中 {{current}} 章を合成中",
+    "show_progress": "進行状況を表示",
     "eta": "残り約 {{time}}",
     "eta_estimating": "残り時間を推定中…",
     "realtime": "{{rate}}× 実時間",

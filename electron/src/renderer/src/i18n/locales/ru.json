@@ -1894,6 +1894,7 @@
     "resume_failed": "Не удалось продолжить аудиокнигу: {{message}}",
     "open_cache_failed": "Не удалось открыть кэш глав",
     "progress_summary": "Синтез {{current}} из {{total}} глав",
+    "show_progress": "Показать прогресс",
     "eta": "~{{time}} осталось",
     "eta_estimating": "Оценка оставшегося времени…",
     "realtime": "{{rate}}× реального времени",

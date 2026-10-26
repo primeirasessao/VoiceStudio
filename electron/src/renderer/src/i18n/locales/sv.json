@@ -1888,6 +1888,7 @@
     "resume_failed": "Det gick inte att fortsätta ljudboken: {{message}}",
     "open_cache_failed": "Det gick inte att öppna kapitelcachen",
     "progress_summary": "Syntetiserar {{current}} av {{total}} kapitel",
+    "show_progress": "Visa förlopp",
     "eta": "~{{time}} kvar",
     "eta_estimating": "Uppskattar återstående tid…",
     "realtime": "{{rate}}× realtid",
