@@ -85,6 +85,33 @@ describe('sanitizeInstruct', () => {
 });
 
 describe('toGenerateForm', () => {
+  it('sends a manually supplied reference transcript with a saved voice (#3192)', () => {
+    const transcript = ' These are the words spoken in the reference. ';
+    const form = toGenerateForm({
+      ...BASE_INPUT,
+      profileId: 'saved-voice',
+      refText: transcript,
+      refAudio: new File(['unused upload'], 'other.wav'),
+    });
+    expect(form.get('profile_id')).toBe('saved-voice');
+    expect(form.get('ref_text')).toBe(transcript);
+    expect(form.has('ref_audio')).toBe(false);
+  });
+
+  it.each([undefined, '', ' \t\n '])(
+    'omits a blank saved-voice transcript (%j) so the stored transcript can be used',
+    (refText) => {
+      const form = toGenerateForm({ ...BASE_INPUT, profileId: 'saved-voice', refText });
+      expect(form.has('ref_text')).toBe(false);
+    },
+  );
+
+  it('does not send a reference transcript when no reference is selected', () => {
+    expect(toGenerateForm({ ...BASE_INPUT, refText: 'old transcript' }).has('ref_text')).toBe(
+      false,
+    );
+  });
+
   it('sends the picked preset voice only when one is set (#2938)', () => {
     expect(toGenerateForm(BASE_INPUT).has('preset_voice')).toBe(false);
     expect(toGenerateForm({ ...BASE_INPUT, presetVoice: 'F3' }).get('preset_voice')).toBe('F3');
@@ -271,7 +298,10 @@ describe('generateClone', () => {
     vi.stubGlobal('fetch', fetchMock);
     const onProgress = vi.fn();
 
-    const result = await generateClone({ ...BASE_INPUT, profileId: 'p1' }, { onProgress });
+    const result = await generateClone(
+      { ...BASE_INPUT, profileId: 'p1', refText: 'Reference words' },
+      { onProgress },
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -279,6 +309,7 @@ describe('generateClone', () => {
     expect(init.method).toBe('POST');
     expect(init.body).toBeInstanceOf(FormData);
     expect((init.body as FormData).get('profile_id')).toBe('p1');
+    expect((init.body as FormData).get('ref_text')).toBe('Reference words');
     expect(init.signal).toBeInstanceOf(AbortSignal);
 
     expect(result.blob.size).toBe(bytes.length);
@@ -454,7 +485,14 @@ it('carries the backend error class off a stream error frame (#1800)', async () 
         ),
     ),
   );
-  const error = await generateCloneStreaming(BASE_INPUT).catch((e) => e);
+  const error = await generateCloneStreaming({
+    ...BASE_INPUT,
+    profileId: 'saved-voice',
+    refText: 'Reference words',
+  }).catch((e) => e);
+  const form = vi.mocked(fetch).mock.calls[0][1]?.body as FormData;
+  expect(form.get('profile_id')).toBe('saved-voice');
+  expect(form.get('ref_text')).toBe('Reference words');
   expect(error.errorClass).toBe('RuntimeError');
 });
 

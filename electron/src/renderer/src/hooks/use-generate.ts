@@ -110,6 +110,15 @@ export interface UseGenerateClone {
   instructVocabulary: InstructVocabulary;
 }
 
+/** A saved voice carries its own transcript; send only a manual correction (#3192),
+ * so unchanged or blank text keeps the server's stored-transcript path. */
+export function manualProfileTranscript(
+  typed: string,
+  stored: string | null | undefined,
+): string | undefined {
+  return typed.trim() && typed !== (stored ?? '') ? typed : undefined;
+}
+
 function failureTopic(err: unknown): string | null {
   if (!(err instanceof ApiError) || !err.payload) return null;
   const detail = err.payload.detail;
@@ -358,7 +367,17 @@ function useGenerateController(): UseGenerateClone {
               ? null
               : settings.selectedProfileId,
           refAudio: design || settings.selectedProfileId || presetOnly ? null : reference.file,
-          refText: design || presetOnly ? undefined : settings.refText,
+          refText:
+            design || presetOnly
+              ? undefined
+              : settings.selectedProfileId
+                ? manualProfileTranscript(
+                    settings.refText,
+                    queryClient
+                      .getQueryData<Profile[]>(queryKeys.profiles)
+                      ?.find((profile) => profile.id === settings.selectedProfileId)?.ref_text,
+                  )
+                : settings.refText,
           instruct,
           instructVocabulary,
           designRecipe: design?.recipe,

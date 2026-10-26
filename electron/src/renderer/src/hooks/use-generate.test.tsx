@@ -445,6 +445,44 @@ it.each([
 );
 
 it.each([
+  ['the stored transcript unchanged', 'Stored words.', undefined],
+  ['a manual correction', 'Corrected words.', 'Corrected words.'],
+  ['a blank field', '   ', undefined],
+])('sends a saved voice %s only as a manual override', async (_label, refText, expected) => {
+  patchCloneSettings({
+    text: 'Clone script',
+    selectedProfileId: 'saved',
+    refText,
+    autoPlay: false,
+  });
+  vi.mocked(generateClone).mockClear().mockRejectedValueOnce(new Error('stop after request'));
+  const client = new QueryClient();
+  client.setQueryData(queryKeys.profiles, [{ id: 'saved', ref_text: 'Stored words.' } as Profile]);
+  function CloneConsumer() {
+    const state = useGenerateClone();
+    return (
+      <>
+        <button onClick={() => void state.generate()}>clone ref test</button>
+        <span>{state.error}</span>
+      </>
+    );
+  }
+  render(
+    <QueryClientProvider client={client}>
+      <GenerationProvider>
+        <CloneConsumer />
+      </GenerationProvider>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByText('clone ref test'));
+  await screen.findByText('stop after request');
+  expect(generateClone).toHaveBeenCalledWith(
+    expect.objectContaining({ profileId: 'saved', refText: expected }),
+    expect.anything(),
+  );
+});
+
+it.each([
   [false, ''],
   [null, 'calm'],
 ] as const)(
