@@ -250,7 +250,8 @@ export function StatusBar({
         );
       if (family === 'asr')
         return (
-          (entry.id === 'asr' || entry.id === 'capture-asr') && entry.checkpoint === activeModel
+          ['asr', 'active-asr', 'capture-asr'].includes(entry.id) &&
+          entry.checkpoint === activeModel
         );
       return entry.id === family;
     });

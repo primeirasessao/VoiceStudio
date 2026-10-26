@@ -489,6 +489,16 @@ class ASRBackend(ABC):
         """Release the model from memory."""
         pass
 
+    def instance_cache_key(self) -> tuple:
+        """The configuration this instance's constructor resolved (model,
+        device, endpoint). Two instances with equal keys load the same weights
+        the same way, so the warm cache may serve one in place of the other;
+        a backend that resolves its model later overrides this to include it."""
+        return tuple(sorted(
+            (k, v) for k, v in vars(self).items()
+            if isinstance(v, (str, int, float, bool, type(None)))
+        ))
+
 
 # ── WhisperX (cross-platform default — forced-alignment word timing) ────────
 
@@ -1489,6 +1499,10 @@ class PyTorchWhisperBackend(ASRBackend):
         # Reuses the `_asr_pipe` attached to the TTS model when available.
         self._pipe = asr_pipe
 
+    def instance_cache_key(self) -> tuple:
+        # The checkpoint is resolved when the pipeline is built, not here.
+        return super().instance_cache_key() + (("model", self._model_name()),)
+
     # Free VRAM needed on CUDA, where _ensure_pipe loads fp16 weights: the
     # weights (parameters x 2 bytes), the batch-16 decode workspace, and
     # headroom. Loading onto a nearly full card works, then the first
@@ -2151,6 +2165,9 @@ class SherpaDictationBackend(ASRBackend):
     @property
     def spec(self):
         return self._spec
+
+    def instance_cache_key(self) -> tuple:
+        return super().instance_cache_key() + (("spec", self._spec.id),)
 
     @property
     def streaming(self) -> bool:
@@ -3098,26 +3115,171 @@ def active_backend_id() -> str:
 _ISOLATED_INSTANCES: dict[str, "ASRBackend"] = {}
 
 
-def get_active_asr_backend(*, asr_pipe=None) -> ASRBackend:
-    bid = active_backend_id()
-    if bid == "pytorch-whisper":
-        return PyTorchWhisperBackend(asr_pipe=asr_pipe)
-    if bid == "mlx-whisper":
-        return MLXWhisperBackend()
-    if bid == "faster-whisper":
-        return FasterWhisperBackend()
-    if bid == "whisperx":
-        return WhisperXBackend()
+# In-process backends share ONE warm slot. Every call used to construct a
+# fresh backend, and a fresh backend holds no weights, so
+# load_active_asr_backend() reloaded the model on every transcription request
+# (measured: ~6 s for a 2 s clip with large-v3-turbo on CUDA, ~0.5 s warm).
+# The slot is keyed by backend id + the configuration the constructor resolves
+# (model, device, endpoint), so an engine or model switch builds a new
+# instance and releases the outgoing model. Like the capture ASR it is
+# released by the idle worker, the make-room paths and Loaded Models → Unload,
+# and never while a transcribe is running on it: a caller's own ``unload()``
+# (the dub frees VRAM for TTS that way) is deferred until the running call
+# returns. Only the TTS model's preloaded ``asr_pipe`` bypasses the slot — that
+# pipeline belongs to the TTS model's lifecycle, not to this cache.
+_active_asr: ASRBackend | None = None
+_active_asr_key: tuple | None = None
+_active_asr_last_used: float = 0.0
+_active_asr_lock = threading.Lock()
+
+
+def _touch_active_asr() -> None:
+    global _active_asr_last_used
+    _active_asr_last_used = time.monotonic()
+
+
+def _unload_warm(backend: ASRBackend) -> None:
+    try:
+        inner = backend._warm_inner.get("unload")
+        inner() if inner is not None else type(backend).unload(backend)
+    except Exception:  # noqa: BLE001 — a stuck unload must not break the caller
+        logger.warning("ASR backend unload failed", exc_info=True)
+
+
+def _release_warm(backend: ASRBackend) -> bool:
+    """Drop ``backend`` from the warm slot and unload it, or defer the unload
+    to the end of a transcribe still running on it. True when unloaded now."""
+    global _active_asr, _active_asr_key
+    with _active_asr_lock:
+        if _active_asr is backend:
+            _active_asr = _active_asr_key = None
+        if backend._warm_calls:
+            backend._warm_release_pending = True
+            return False
+    _unload_warm(backend)
+    return True
+
+
+def _make_warm(backend: ASRBackend) -> None:
+    """Instrument a cached instance so the cache knows when a transcribe runs
+    on it and a caller's ``unload()`` respects that. Weak references keep the
+    instance free of a self-cycle, so dropping it still frees the model."""
+    ref = weakref.ref(backend)
+    # Methods the instance itself overrides; the class's are looked up per call.
+    backend._warm_inner = {
+        name: vars(backend)[name] for name in ("transcribe", "unload") if name in vars(backend)
+    }
+
+    def transcribe(*args, **kwargs):
+        inst = ref()
+        inner = inst._warm_inner.get("transcribe")
+        with _active_asr_lock:
+            inst._warm_calls += 1
+        try:
+            if inner is not None:
+                return inner(*args, **kwargs)
+            return type(inst).transcribe(inst, *args, **kwargs)
+        finally:
+            with _active_asr_lock:
+                inst._warm_calls -= 1
+                release = not inst._warm_calls and inst._warm_release_pending
+                if release:
+                    inst._warm_release_pending = False
+            _touch_active_asr()
+            if release:
+                _unload_warm(inst)
+
+    def unload():
+        inst = ref()
+        if inst is not None:
+            _release_warm(inst)
+
+    # Per-request options are matched against the engine's real signature.
+    transcribe.__signature__ = inspect.signature(backend.transcribe)
+    backend._warm_calls = 0
+    backend._warm_release_pending = False
+    backend.transcribe = transcribe
+    backend.unload = unload
+
+
+def _warm_in_process_backend(bid: str, cls: type[ASRBackend]) -> ASRBackend:
+    global _active_asr, _active_asr_key
+    fresh = cls()  # constructors only resolve configuration; weights load lazily
+    if not isinstance(fresh, ASRBackend):
+        return fresh  # a duck-typed stand-in has no cache contract
+    key = (bid, cls, fresh.instance_cache_key())
+    with _active_asr_lock:
+        outgoing = _active_asr
+        if outgoing is not None and _active_asr_key == key:
+            _touch_active_asr()
+            return outgoing
+        _make_warm(fresh)
+        _active_asr, _active_asr_key = fresh, key
+        _touch_active_asr()
+    if outgoing is not None:
+        _release_warm(outgoing)
+    return fresh
+
+
+def release_idle_active_asr_backend(idle_s: float, *, now: float | None = None) -> bool:
+    """Unload the warm in-process ASR once unused for ``idle_s`` seconds.
+    Declines while a transcribe is running on it. Never raises."""
+    global _active_asr, _active_asr_key
+    now = time.monotonic() if now is None else now
+    with _active_asr_lock:
+        backend = _active_asr
+        if backend is None or backend._warm_calls:
+            return False
+        if now - _active_asr_last_used < idle_s:
+            return False
+        _active_asr = _active_asr_key = None
+    _unload_warm(backend)
+    logger.info("Idle timeout reached. Unloading ASR (%s) to free memory.", type(backend).__name__)
+    return True
+
+
+def reset_active_asr_backend() -> None:
+    """Release the warm in-process ASR after an engine or model selection, so
+    the outgoing model is freed now instead of at the next request."""
+    backend = _active_asr
+    if backend is not None:
+        _release_warm(backend)
+
+
+def loaded_active_asr_backend() -> ASRBackend | None:
+    """The warm in-process ASR when it holds model state (Loaded Models)."""
+    backend = _active_asr
+    return backend if backend is not None and backend.execution_evidence_loaded() else None
+
+
+def _in_process_class(bid: str) -> type[ASRBackend]:
+    # Resolved through module globals so a substituted whisper-family class
+    # (tests, plugins) is honoured exactly as before.
+    named = {
+        "pytorch-whisper": PyTorchWhisperBackend,
+        "mlx-whisper": MLXWhisperBackend,
+        "faster-whisper": FasterWhisperBackend,
+        "whisperx": WhisperXBackend,
+    }
+    if bid in named:
+        return named[bid]
     if bid not in _REGISTRY:
         raise ValueError(f"Unknown ASR backend: {bid!r}. Known: {list(_REGISTRY)}")
-    cls = _REGISTRY[bid]
+    return _REGISTRY[bid]
+
+
+def get_active_asr_backend(*, asr_pipe=None) -> ASRBackend:
+    bid = active_backend_id()
+    if bid == "pytorch-whisper" and asr_pipe is not None:
+        return PyTorchWhisperBackend(asr_pipe=asr_pipe)
+    cls = _in_process_class(bid)
     if getattr(cls, "_is_subprocess_isolated", False):
         inst = _ISOLATED_INSTANCES.get(bid)
         if inst is None:
             inst = cls()
             _ISOLATED_INSTANCES[bid] = inst
         return inst
-    return cls()
+    return _warm_in_process_backend(bid, cls)
 
 
 def _asr_backend_pinned() -> bool:
@@ -3313,8 +3475,8 @@ def load_active_asr_backend(
 
 
 # ── Reference-transcript cache (#1032) ──────────────────────────────────────
-# `get_active_asr_backend()` returns a FRESH backend instance per call for the
-# whisper family, so every `transcribe_reference` used to reload whisper
+# `get_active_asr_backend()` used to return a FRESH backend instance per call
+# for the whisper family, so every `transcribe_reference` reloaded whisper
 # weights from scratch — a multi-second (CPU: tens of seconds) hit on EVERY
 # /generate whose reference clip has no stored transcript (#308 introduced the
 # call; profiles saved without a transcript hit it per request). The reference
@@ -4111,6 +4273,7 @@ def select_faster_whisper_model(repo_id: str) -> None:
     instance = _ISOLATED_INSTANCES.pop("faster-whisper-isolated", None)
     if instance is not None:
         instance.shutdown()
+    reset_active_asr_backend()
 
 # faster-whisper / WhisperX short model aliases → the HF repo they download.
 # Covers our own defaults plus the documented size aliases; an unrecognized

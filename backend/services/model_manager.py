@@ -3320,16 +3320,21 @@ def _make_room_before_tts_load() -> None:
 
 
 def _release_idle_tts_memory(stage):
-    """Drop capture-ASR, TTS side caches, and allocator caches. Best-effort;
-    never raises (a cleanup failure must not break the load/generate that called
-    it). Shared by the cold-load and warm-generate make-room paths so the
-    eviction recipe cannot drift between them (#730/#1190)."""
+    """Drop capture-ASR, the warm active ASR, TTS side caches, and allocator
+    caches. Best-effort; never raises (a cleanup failure must not break the
+    load/generate that called it). Shared by the cold-load and warm-generate
+    make-room paths so the eviction recipe cannot drift between them
+    (#730/#1190)."""
     try:
         try:
-            from services.asr_backend import release_idle_capture_backend
+            from services.asr_backend import (
+                release_idle_active_asr_backend,
+                release_idle_capture_backend,
+            )
             release_idle_capture_backend(0.0)  # 0s idle = release if unleased
+            release_idle_active_asr_backend(0.0)  # declines while transcribing
         except Exception:  # noqa: BLE001 -- best-effort, never blocks the caller
-            logger.debug("capture-ASR pre-%s release failed", stage, exc_info=True)
+            logger.debug("ASR pre-%s release failed", stage, exc_info=True)
         release_tts_side_caches()
         free_vram()
     except Exception:  # noqa: BLE001 -- a cleanup failure must never break the caller
@@ -3600,6 +3605,15 @@ async def idle_worker():
                 free_vram()
         except Exception:  # noqa: BLE001 — the reaper must never kill idle_worker
             logger.warning("idle capture-ASR release failed", exc_info=True)
+        # The warm transcription ASR (API, dub, batch) makes the same bargain;
+        # held off while a transcribe is running on it.
+        try:
+            from services.asr_backend import release_idle_active_asr_backend
+
+            if release_idle_active_asr_backend(idle_timeout):
+                free_vram()
+        except Exception:  # noqa: BLE001 — the reaper must never kill idle_worker
+            logger.warning("idle ASR release failed", exc_info=True)
         # Same bargain for the AudioSeal watermark models, which loaded on the
         # first embed and were never released. Deliberately only here and not
         # in the make-room paths: watermarking runs immediately *after* a

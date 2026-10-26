@@ -193,6 +193,9 @@ def _clear_asr_installed_memo(request):
                     targets[id(val)] = val
         for m in targets.values():
             getattr(m, "_INSTALLED_REPO_MEMO", set()).clear()
+            # The warm in-process ASR slot is process-wide state too.
+            if hasattr(m, "_active_asr"):
+                m._active_asr = m._active_asr_key = None
 
     _clear_all()
     yield

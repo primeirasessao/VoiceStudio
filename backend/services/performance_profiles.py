@@ -167,6 +167,7 @@ def _activate_asr_model(tier: str) -> dict | None:
         asr_backend.select_faster_whisper_model(repo_id)
     if asr_backend.active_backend_id() != backend_id:
         prefs.set_("asr_backend", backend_id)
+        asr_backend.reset_active_asr_backend()
     return {"engine": backend_id, "model": repo_id}
 
 
@@ -441,6 +442,7 @@ def _activate_budgeted_profile(tier: str) -> dict:
             if asr_backend.faster_whisper_model_id() != model:
                 asr_backend.select_faster_whisper_model(model)
             prefs.set_("asr_backend", engine)
+            asr_backend.reset_active_asr_backend()
         elif family == "dictation":
             if prefs.get("dictation.model_id") != model:
                 prefs.set_("dictation.model_id", model)

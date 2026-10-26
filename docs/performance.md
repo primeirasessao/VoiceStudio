@@ -229,10 +229,14 @@ Subprocess-engine unload skips a sidecar while an operation holds its lock, incl
 
 - **Top toolbar → Flush** (the button next to the model-status badge). The
   dropdown lists every model currently in memory — the TTS model, its
-  co-loaded ASR, the diarization pipeline, and any resident engines or
-  sidecars — with its device and VRAM use, and a per-model **Unload** button
-  where unloading is possible (WhisperX is released together with the TTS
-  model, so it has no button of its own). An engine left resident after you
+  co-loaded ASR, the warm transcription and dictation ASR, the diarization
+  pipeline, and any resident engines or sidecars — with its device and VRAM
+  use, and a per-model **Unload** button where unloading is possible (WhisperX
+  is released together with the TTS model, so it has no button of its own).
+  The transcription ASR stays loaded between requests, so repeated
+  transcriptions skip the model load; it is released after the idle timeout,
+  when another model needs the memory, or when you switch ASR engine or
+  model. An engine left resident after you
   switched away from it is marked *"not active — safe to unload"*. Below the
   list are the two bulk actions:
   - **Flush caches** — runs a multi-pass garbage collection and releases the

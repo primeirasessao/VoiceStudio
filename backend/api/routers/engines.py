@@ -972,6 +972,9 @@ def select_engine(req: SelectEngineRequest):
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
     prefs.set_(pref_key, req.backend_id)
+    if req.family == "asr":
+        # Free the outgoing engine's warm model now, not at the next request.
+        asr_backend.reset_active_asr_backend()
     return {
         "family": req.family,
         "active": module.active_backend_id(),
