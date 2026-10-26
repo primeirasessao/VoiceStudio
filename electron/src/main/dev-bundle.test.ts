@@ -1,7 +1,6 @@
 import {
   existsSync,
   chmodSync,
-  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -214,11 +213,13 @@ describe.skipIf(process.platform !== 'darwin')('macOS cache cleanup safety', () 
     const executable = join(root, 'active', 'VoiceStudio.app', 'Contents', 'MacOS', 'Electron');
     mkdirSync(join(executable, '..'), { recursive: true });
     mkdirSync(join(root, 'current'));
-    linkSync(process.execPath, executable);
-    const child = spawnChild(executable, [
-      '-e',
-      'process.stdout.write("ready");setInterval(()=>{},1000)',
-    ]);
+    writeFileSync(executable, '');
+    // ps lists argv[0]; a hard-linked node breaks when it loads a relative libnode (Homebrew).
+    const child = spawnChild(
+      process.execPath,
+      ['-e', 'process.stdout.write("ready");setInterval(()=>{},1000)'],
+      { argv0: executable },
+    );
     try {
       await once(child.stdout!, 'data');
       pruneOldBundles(root, join(root, 'current'));
