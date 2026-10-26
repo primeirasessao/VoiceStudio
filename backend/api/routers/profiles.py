@@ -965,7 +965,9 @@ async def lock_profile(
             shutil.copy2(str(src_path), staged_path)
             restore, finalize = _install_staged(staged_path, locked_path)
 
-            ref_text = history["text"][:100] if history["text"] else ""
+            # Generation pairs the locked take with this text as its
+            # reference transcript, so it must be the whole take's text.
+            ref_text = history["text"] or ""
             # A design voice's saved seed is its identity (#3254): locking must
             # not replace it with the take's seed, or unlocking would lose it.
             lock_seed = seed
