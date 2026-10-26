@@ -1624,6 +1624,17 @@
       "title": "Audio",
       "type": "string"
      },
+     "diarize": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Diarize"
+     },
      "dictation": {
       "anyOf": [
        {
@@ -1667,6 +1678,17 @@
        }
       ],
       "title": "Model"
+     },
+     "num_speakers": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Num Speakers"
      },
      "refine": {
       "anyOf": [
@@ -18633,7 +18655,7 @@
   },
   "/transcribe": {
    "post": {
-    "description": "Transcribe an audio file to text.\n\nArgs:\n    audio: The audio file to transcribe.\n    language: Optional language hint (not currently used; auto-detected).\n    model: Whisper model size (legacy; ignored in dual-mode architecture).\n    mode: 'fast' (default) uses MLX Turbo for speed; 'accurate' uses\n          the selected ASR engine with word-level timing. 'reference' uses\n          the selected ASR engine without word-level timing.\n    refine: Opt-in local-LLM cleanup of the final text (disfluencies,\n          self-corrections, punctuation) \u2014 same pipeline the live\n          dictation socket uses. Off by default so MCP/CLI callers don't\n          pay LLM latency unless they ask; honours the user's\n          Settings \u2192 Dictation-refinement config and silently passes\n          through when no LLM backend is configured. The raw ``text``\n          is always returned; ``refined_text`` is added only when the\n          LLM actually changed something.\n    dictation: Opt-in flag for hotkey-dictation callers: applies the\n          saved dictation vocabulary hint (``dictation.prompt``) to\n          engines that accept a prompt. Off by default so file\n          transcription and MCP/CLI callers are never biased by it;\n          ignored in 'reference' mode.\n\nReturns:\n    {\n        \"text\": \"full transcription\",\n        \"refined_text\": \"cleaned text\",   # only when refine=true changed it\n        \"segments\": [ {\"start\": 0.0, \"end\": 1.5, \"text\": \"...\"}, ... ],\n        \"language\": \"en\",\n        \"duration_s\": 4.2,\n        \"transcription_time_s\": 0.8,\n        \"engine\": \"mlx-whisper\"\n    }",
+    "description": "Transcribe an audio file to text.\n\nArgs:\n    audio: The audio file to transcribe.\n    language: Optional language hint (not currently used; auto-detected).\n    model: Whisper model size (legacy; ignored in dual-mode architecture).\n    mode: 'fast' (default) uses MLX Turbo for speed; 'accurate' uses\n          the selected ASR engine with word-level timing. 'reference' uses\n          the selected ASR engine without word-level timing.\n    refine: Opt-in local-LLM cleanup of the final text (disfluencies,\n          self-corrections, punctuation) \u2014 same pipeline the live\n          dictation socket uses. Off by default so MCP/CLI callers don't\n          pay LLM latency unless they ask; honours the user's\n          Settings \u2192 Dictation-refinement config and silently passes\n          through when no LLM backend is configured. The raw ``text``\n          is always returned; ``refined_text`` is added only when the\n          LLM actually changed something.\n    dictation: Opt-in flag for hotkey-dictation callers: applies the\n          saved dictation vocabulary hint (``dictation.prompt``) to\n          engines that accept a prompt. Off by default so file\n          transcription and MCP/CLI callers are never biased by it;\n          ignored in 'reference' mode.\n\n    diarize: Opt-in speaker identification ('accurate' mode only, which\n          is the mode with segment timings). Each segment gains a\n          ``speaker`` label and the response a ``speakers`` list. If the\n          diarization model is missing or fails, the transcript is still\n          returned with a ``diarization_error`` code and no labels.\n    num_speakers: Optional exact speaker count hint for diarization.\n\nReturns:\n    {\n        \"text\": \"full transcription\",\n        \"refined_text\": \"cleaned text\",   # only when refine=true changed it\n        \"segments\": [ {\"start\": 0.0, \"end\": 1.5, \"text\": \"...\"}, ... ],\n        \"language\": \"en\",\n        \"duration_s\": 4.2,\n        \"transcription_time_s\": 0.8,\n        \"engine\": \"mlx-whisper\"\n    }",
     "operationId": "transcribe_audio_transcribe_post",
     "requestBody": {
      "content": {
