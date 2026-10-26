@@ -31,6 +31,9 @@ describe('generationFailureMessage', () => {
     ['ENGINE_DEPENDENCY_MISSING', 'tts_errors.engine_dependency_missing'],
     ['REFERENCE_STT_MISSING', 'tts_errors.reference_stt_missing'],
     ['SOURCE_LANGUAGE_REQUIRED', 'tts_errors.source_language_required'],
+    ['MEDIA_TOOL_MISSING', 'failureClass.media_tool_missing'],
+    ['HF_MIRROR_UNREACHABLE', 'failureClass.hf_mirror_unreachable'],
+    ['VIDEO_DOWNLOAD_BOT_CHECK', 'failureClass.video_download_bot_check'],
   ])('localizes the %s diagnostic topic instead of the generic floor message', (topic, key) => {
     const translate = vi.fn((k: string) => `t:${k}`);
     expect(generationFailureMessage({ docs_topic: topic }, translate)).toBe(`t:${key}`);

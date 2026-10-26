@@ -308,6 +308,24 @@ def public_engine_health(ok: bool, diagnostic: Any) -> str:
     return "Healthy" if ok else "Engine unavailable; check the backend log for details."
 
 
+def classified_request_detail(message: str) -> dict[str, str] | None:
+    """Structured 400 detail for a request failure of a known class, else None.
+
+    ``{"docs_topic", "message", "hint"}`` lets the desktop app show its
+    localized copy and the class's in-app fix (#2929/#2678) instead of the
+    English sentence, and puts the topic in the bug report. Every classified
+    class qualifies, so a class added to the taxonomy needs no route change.
+    Values are VoiceStudio-owned constants only — never ``message`` itself.
+    """
+    from core.failure import classify, public_hint_for_topic
+
+    topic = classify(message)
+    hint = public_hint_for_topic(topic) if topic else ""
+    if not hint:
+        return None
+    return {"docs_topic": topic, "message": hint, "hint": hint}
+
+
 def public_exception_response(error: BaseException, *, fallback: str) -> dict[str, str]:
     """Return fixed remediation selected by a stable failure taxonomy.
 

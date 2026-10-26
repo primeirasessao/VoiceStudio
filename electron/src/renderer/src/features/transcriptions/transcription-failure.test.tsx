@@ -42,11 +42,24 @@ it('shows the remediation of a classified failure instead of only "Transcription
   expect(screen.getByText('t:tts_errors.disk_full')).toBeVisible();
 });
 
-it("falls back to the backend's own hint for a classified topic without a localized string", () => {
+it('localizes every catalogued class and offers its in-app fix', () => {
   show(
     new ApiError(500, GENERIC, {
       detail: GENERIC,
       docs_topic: 'MODEL_CACHE_CORRUPT',
+      hint: 'Redownload the model from Model Catalogue.',
+    }),
+  );
+  expect(screen.getByText('t:failureClass.model_cache_corrupt')).toBeVisible();
+  expect(screen.queryByText('Redownload the model from Model Catalogue.')).toBeNull();
+  expect(screen.getByRole('button', { name: /failureAction.models/ })).toBeInTheDocument();
+});
+
+it("falls back to the backend's own hint for a class this build does not know yet", () => {
+  show(
+    new ApiError(500, GENERIC, {
+      detail: GENERIC,
+      docs_topic: 'A_FUTURE_CLASS',
       hint: 'Redownload the model from Model Catalogue.',
     }),
   );

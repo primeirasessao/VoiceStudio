@@ -1,6 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { AlertCircleIcon, XIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { failureTopicOf } from '@shared/utils/failureCatalog';
+import { FailureAction } from '@/components/failure-action';
 import { Button } from '@/components/ui/button';
 import { describeError } from '@/lib/api/client';
 import { apiFailureGuidance } from '@/lib/api/failure';
@@ -10,10 +12,16 @@ export interface TranscriptionFailureState {
   detail: string;
   /** VoiceStudio-owned remediation for a classified failure, shown visibly. */
   guidance?: string;
+  /** Diagnosed failure class, which picks the in-app fix. */
+  topic?: string;
 }
 
 export function transcriptionFailureFrom(error: unknown): TranscriptionFailureState {
-  return { detail: describeError(error), guidance: apiFailureGuidance(error) };
+  return {
+    detail: describeError(error),
+    guidance: apiFailureGuidance(error),
+    topic: failureTopicOf(error),
+  };
 }
 
 export function TranscriptionFailure({
@@ -35,6 +43,7 @@ export function TranscriptionFailure({
         <span role="alert" className="min-w-0 flex-1 font-medium">
           {t('transcriptions.failed')}
         </span>
+        <FailureAction topic={failure.topic} />
         <Button variant="ghost" disabled={retryDisabled} onClick={onRetry}>
           {t('backend.retry')}
         </Button>

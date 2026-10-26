@@ -37,7 +37,7 @@ import { TRANSLATION_TARGET_LABELS, translationTargetCode } from '@/lib/translat
 import { PRESETS } from '@shared/utils/constants';
 import { announceModelLicenceRequired } from '@/features/settings/model-license-contract';
 import type { BatchJob } from '@shared/api/batch-types';
-import { generationFailureMessage } from '@shared/utils/generationFailureMessage';
+import { BatchJobFailure } from './batch-job-failure';
 import { enqueueVideos } from './enqueue';
 import { cachedTtsLanguagesSupported } from '@/lib/language-options';
 import { useTranslationEngines } from '@/features/settings/translation-settings';
@@ -88,7 +88,8 @@ export function BatchPage() {
   useEffect(() => {
     for (const job of jobs.data ?? []) {
       const setup = job.setup_required;
-      if (setup?.kind !== 'model_licence_required' || announcedLicence.current.has(job.id)) continue;
+      if (setup?.kind !== 'model_licence_required' || announcedLicence.current.has(job.id))
+        continue;
       announcedLicence.current.add(job.id);
       announceModelLicenceRequired(setup);
     }
@@ -569,17 +570,7 @@ function BatchJobCard({
           {t('batch.completed_in', { duration: formatDuration(duration) })}
         </p>
       )}
-      {job.error && generationFailureMessage(job, t) && (
-        <p role="alert" className="mt-3 text-xs text-destructive">
-          {generationFailureMessage(job, t)}
-        </p>
-      )}
-      {job.error && (
-        <details className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          <summary>{t('common.more_info')}</summary>
-          <p className="mt-2 break-words">{job.error}</p>
-        </details>
-      )}
+      <BatchJobFailure job={job} />
       <div className="mt-3 flex flex-wrap justify-end gap-2">
         {job.status === 'done' &&
           Object.keys(job.outputs || {}).map((lang) => (

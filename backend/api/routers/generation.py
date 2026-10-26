@@ -2737,19 +2737,12 @@ async def generate_speech(
         # naming parameters and files the user cannot act on — those get the
         # owned remedy for their class instead (#1879). Unclassified ones keep
         # passing through, so this cannot swallow a good message.
-        from core.failure import classify, public_hint_for_topic
+        from core.public_errors import classified_request_detail
 
-        _topic = classify(str(e))
-        _owned = public_hint_for_topic(_topic) if _topic else ""
-        if _topic == "REFERENCE_STT_MISSING" and _owned:
-            # Structured so the client can show its localized copy (#2929/#2678)
-            # instead of the English sentence, and so the topic reaches the
-            # bug report.
-            raise HTTPException(
-                status_code=400,
-                detail={"docs_topic": _topic, "message": _owned, "hint": _owned},
-            ) from e
-        raise HTTPException(status_code=400, detail=_owned or str(e)) from e
+        _classified = classified_request_detail(str(e))
+        if _classified:
+            raise HTTPException(status_code=400, detail=_classified) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         tb = traceback.format_exc()
         logger.error("Inference failed: %s\n%s", e, tb)

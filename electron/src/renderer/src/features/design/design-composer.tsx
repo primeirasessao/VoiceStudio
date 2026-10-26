@@ -80,6 +80,7 @@ export function DesignComposer({
         <PipelineFailure
           className="mb-2.5"
           fallback={generation.error}
+          topic={generation.errorTopic}
           onDismiss={generation.clearError}
         />
       )}

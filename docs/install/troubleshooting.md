@@ -101,6 +101,16 @@ Streaming and HTTP generation failures can identify these causes. Electron and
 web clients show the recovery guidance in the selected language; API clients
 receive a stable `docs_topic` and a safe fallback message, never private exception text.
 
+In the desktop app every diagnosed topic (the full list is in
+`backend/core/failure.py`) shows a short message in the app language and, where
+the app can fix it, a button that does so: **Install speech-to-text model** and
+**Add transcript** for `REFERENCE_STT_MISSING`, **Free memory** for `GPU_OOM` and
+`HOST_MEMORY_EXHAUSTED`, **Open Storage** for a full or unwritable drive,
+**Choose device** for an unsupported GPU, **Open Audio tools** for a missing
+ffmpeg, **Add token** for Hugging Face access errors, and the matching Models
+page for missing or damaged models. **Open docs** and **Copy diagnostic** stay
+next to it, and the backend's English text stays under **Details**.
+
 | Topic | Recovery |
 | --- | --- |
 | `GPU_ARCH_UNSUPPORTED` | The installed PyTorch build cannot run kernels on this GPU. Select CPU in Settings → Performance & Device, or use a PyTorch build compatible with the GPU. |

@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { InstallProgress } from '@/components/model-install-progress';
 import { useModelInstall } from '@/hooks/use-model-install';
 import { apiJson, describeError } from '@/lib/api/client';
-import { router } from '@/router';
 
 interface RecommendedModel {
   repo_id: string;
@@ -19,7 +18,7 @@ interface RecommendedModel {
  * error so the fix is one click instead of a hunt through the Model Catalogue
  * (#2929, #2678). Starts the download of the first speech-to-text model the
  * host's curated preset lists and follows it inline; with nothing left to
- * install it opens the catalogue, where a model can be selected.
+ * install it opens the speech-to-text models, where one can be selected.
  */
 export function InstallSttButton() {
   const { t } = useTranslation();
@@ -35,7 +34,8 @@ export function InstallSttButton() {
         (model) => model.role.toLowerCase() === 'asr' && !model.installed,
       );
       if (!missing) {
-        await router.navigate({ to: '/settings/models' });
+        const { router } = await import('@/router');
+        await router.navigate({ to: '/settings/models/$family', params: { family: 'asr' } });
         return;
       }
       if ((await install.start(missing.repo_id)) === 'started')

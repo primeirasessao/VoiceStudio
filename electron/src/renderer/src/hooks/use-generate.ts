@@ -18,6 +18,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { throttle } from '@tanstack/react-pacer';
 import { toast } from 'sonner';
 import { ApiError, apiJson, describeError, isAbortError } from '@/lib/api/client';
+import { failureTopicOf } from '@shared/utils/failureCatalog';
 import { generateClone, sanitizeInstruct } from '@/lib/api/generate';
 import type {
   DesignRecipe,
@@ -108,16 +109,6 @@ export interface UseGenerateClone {
   cloneBlocker: CloneBlocker;
   /** How the active engine reads `instruct`: OmniVoice tags or as written (#2389). */
   instructVocabulary: InstructVocabulary;
-}
-
-function failureTopic(err: unknown): string | null {
-  if (!(err instanceof ApiError) || !err.payload) return null;
-  const detail = err.payload.detail;
-  const topic =
-    typeof detail === 'object' && detail !== null
-      ? (detail as { docs_topic?: unknown }).docs_topic
-      : undefined;
-  return typeof topic === 'string' && topic ? topic : null;
 }
 
 function isModelNotDownloaded(err: unknown): boolean {
@@ -423,7 +414,7 @@ function useGenerateController(): UseGenerateClone {
       } catch (err) {
         if (!cancelledRef.current) {
           recordActionBreadcrumb(`generate:${reportMode}:error`);
-          setErrorTopic(failureTopic(err));
+          setErrorTopic(failureTopicOf(err) ?? null);
           setError(
             isAbortError(err)
               ? tr('tts_errors.timeout')
