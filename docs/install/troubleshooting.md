@@ -1483,6 +1483,10 @@ is affected; it does not diagnose or repair the original environment.
 
 Concurrent pre-migration database snapshots reserve distinct backup counters before copying. Reservation files are not recovery backups. A reservation left by an interrupted writer is skipped by subsequent snapshots rather than reused.
 
+On Windows, ownership checks share deletion access so a concurrent reader cannot
+prevent a completed or failed snapshot from releasing its reservation. Existing
+backup contents, counters and live-writer recovery rules remain unchanged.
+
 ## "This model can't be used until you accept its licence"
 
 VoiceStudio does not own or license the models it runs. Models whose licence is

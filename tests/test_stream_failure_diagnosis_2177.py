@@ -102,6 +102,42 @@ def test_an_audio_io_failure_reaches_the_client(diagnosis):
     assert payload["retryable"] is True
 
 
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_a_missing_source_language_reaches_the_client_without_private_text(diagnosis, wrapped):
+    from core.failure import (
+        SOURCE_LANGUAGE_REQUIRED_MESSAGE, SourceLanguageRequiredError, _HINTS,
+    )
+
+    private = "C:/Users/someone/private-video.mp4 token=private-credential"
+    error = (
+        RuntimeError(f"{SOURCE_LANGUAGE_REQUIRED_MESSAGE} {private}")
+        if wrapped else SourceLanguageRequiredError()
+    )
+    payload = diagnosis.stream_generation_failure(error)
+
+    assert payload["docs_topic"] == "SOURCE_LANGUAGE_REQUIRED"
+    assert payload["hint"] == _HINTS["SOURCE_LANGUAGE_REQUIRED"]
+    assert payload["detail"] == (
+        diagnosis.stream_failure("generation_failed")["detail"] + " " + payload["hint"]
+    )
+    assert payload["terminal"] is True and payload["retryable"] is False
+    assert payload["error_class"] == type(error).__name__
+    assert "someone" not in str(payload) and "private-credential" not in str(payload)
+
+
+@pytest.mark.parametrize("message", [
+    "source_language_required",
+    "SOURCE_LANGUAGE_REQUIRED in C:/Users/someone/private-video.mp4",
+    "Source language required while reading a private transcript",
+    "Speech recognition did not report which language this video is spoken in",
+])
+def test_generic_source_language_text_does_not_become_a_terminal_diagnosis(diagnosis, message):
+    payload = diagnosis.stream_generation_failure(RuntimeError(message))
+    assert payload["detail"] == diagnosis.stream_failure("generation_failed")["detail"]
+    assert "hint" not in payload and "docs_topic" not in payload
+    assert payload["retryable"] is True and payload.get("terminal", False) is False
+
+
 # ── nothing else may change ─────────────────────────────────────────────────
 
 

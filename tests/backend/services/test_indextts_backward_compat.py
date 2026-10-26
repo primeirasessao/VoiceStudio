@@ -32,11 +32,11 @@ from engines.indextts import bootstrap
 
 
 def _make_fake_venv(venv_dir: Path) -> Path:
-    """Create a fake venv layout with a real Python executable symlink.
+    """Create a minimal venv layout using the existing Python installation.
 
-    Returns the path to the venv's python executable. The python is a
-    symlink to ``sys.executable`` so subprocess probes that invoke it
-    actually run real Python.
+    Returns a symlink or copy of the running interpreter. A Windows venv
+    redirector also needs pyvenv.cfg to locate the existing base Python.
+    No packages or additional interpreter are installed.
     """
     if sys.platform == "win32":
         bin_dir = venv_dir / "Scripts"
@@ -45,6 +45,11 @@ def _make_fake_venv(venv_dir: Path) -> Path:
         bin_dir = venv_dir / "bin"
         py_name = "python"
     bin_dir.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        (venv_dir / "pyvenv.cfg").write_text(
+            f"home = {sys.base_prefix}\ninclude-system-site-packages = false\n",
+            encoding="utf-8",
+        )
     py_path = bin_dir / py_name
     if py_path.exists():
         py_path.unlink()
@@ -57,6 +62,31 @@ def _make_fake_venv(venv_dir: Path) -> Path:
         shutil.copyfile(sys.executable, py_path)
         os.chmod(py_path, 0o755)
     return py_path
+
+
+@pytest.mark.parametrize("force_copy", [False, True])
+def test_fake_venv_runs_existing_interpreter(monkeypatch, tmp_path, force_copy):
+    if force_copy and sys.platform != "win32":
+        # The copy fallback is the Windows path (no symlink rights). A copied
+        # POSIX interpreter has no pyvenv.cfg/prefix metadata to find its
+        # standard library, so the forced-copy case only means something there.
+        pytest.skip("forced interpreter copy is the Windows-only fallback")
+    if force_copy:
+        def deny_symlink(*args, **kwargs):
+            raise OSError("symlinks unavailable in this fixture")
+
+        monkeypatch.setattr(Path, "symlink_to", deny_symlink)
+    python_path = _make_fake_venv(tmp_path / "fixture with spaces")
+
+    process = subprocess.run(
+        [str(python_path), "-c", "import sys; print(sys.base_prefix)"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert process.returncode == 0, process.stderr
+    assert Path(process.stdout.strip()) == Path(sys.base_prefix)
 
 
 def _install_stub_indextts(venv_dir: Path) -> None:

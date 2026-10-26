@@ -109,11 +109,12 @@ def _amd_unusable_note() -> str:
     """Why an AMD card sits idle, per OS - and only options that really exist."""
     if sys.platform == "win32":
         return (
-            "AMD GPU detected, but this install's PyTorch (the NVIDIA CUDA or "
-            "CPU-only build) cannot drive it, and no ROCm build of the PyTorch "
-            "version VoiceStudio ships exists for Windows. PyTorch "
-            "engines run on the CPU; audio.cpp (Vulkan) can use the GPU - see "
-            "Settings > Performance for the per-engine list."
+            "AMD GPU detected, but this install's PyTorch cannot use it. "
+            "Native ROCm is an explicit installation option for supported "
+            "Windows 11 x64 GPUs; choose AMD ROCm during desktop runtime setup "
+            "or in Settings > Performance. Check the GPU, driver and runtime "
+            "requirements in docs/install/windows-rocm.md. Existing CPU "
+            "engines remain usable; audio.cpp has a separate Vulkan runtime."
         )
     return (
         "AMD GPU detected but torch was installed with CUDA wheels. Set "

@@ -57,6 +57,8 @@ export const CHANNELS = {
   backendSetupRuntime: 'backend:setupRuntime',
   backendCleanSetupRuntime: 'backend:cleanSetupRuntime',
   backendSetRuntimeRegion: 'backend:setRuntimeRegion',
+  backendSetRuntimeTorchPreference: 'backend:setRuntimeTorchPreference',
+  backendBeginRuntimeTorchSetup: 'backend:beginRuntimeTorchSetup',
   backendChooseRuntimeLocation: 'backend:chooseRuntimeLocation',
   backendUseDefaultRuntimeLocation: 'backend:useDefaultRuntimeLocation',
   backendGetConnection: 'backend:getConnection',
@@ -521,6 +523,23 @@ export function registerIpc(
     const owner = getMainWindow();
     assertTrustedMainFrame(event, owner);
     return supervisor.setRuntimeRegion(raw);
+  });
+  ipcMain.handle(CHANNELS.backendSetRuntimeTorchPreference, (event, raw: unknown) => {
+    const owner = getMainWindow();
+    assertTrustedMainFrame(event, owner);
+    if (maintenanceBusy) throw new Error('maintenance_busy');
+    return supervisor.setRuntimeTorchPreference(raw);
+  });
+  ipcMain.handle(CHANNELS.backendBeginRuntimeTorchSetup, async (event, raw: unknown) => {
+    const owner = getMainWindow();
+    assertTrustedMainFrame(event, owner);
+    if (maintenanceBusy) throw new Error('maintenance_busy');
+    maintenanceBusy = true;
+    try {
+      await supervisor.beginRuntimeTorchSetup(raw);
+    } finally {
+      maintenanceBusy = false;
+    }
   });
   ipcMain.handle(CHANNELS.backendChooseRuntimeLocation, async (event, rawTitle: unknown) => {
     const owner = getMainWindow();

@@ -50,6 +50,10 @@ def model_manager(monkeypatch):
 
     monkeypatch.setattr(mm, "_diar_pipeline", None)
     monkeypatch.setattr(mm, "_torch", None)
+    monkeypatch.setattr(
+        "core.device_caps.detect_host_caps", lambda: SimpleNamespace(family="cpu"),
+    )
+    monkeypatch.setattr("services.diarization_runtime.selected_backend", lambda: "pyannote")
     return mm
 
 

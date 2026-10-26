@@ -33,3 +33,11 @@ filters; POSIX filenames keep literal backslashes. Two caption styles are availa
 Smart Fit exports burn captions after the video retime, so both styles follow
 the fitted timeline. The karaoke script can also be downloaded on its own from
 `GET /dub/ass/{job_id}` as an `.ass` sidecar.
+
+## Smart Fit media checks
+
+Smart Fit checks the source frame rate before rendering a batched timeline or
+extending the last frame. If FFprobe is missing or cannot run, repair the media
+tools. If the source has no usable frame rate, check the file and retry. Preview
+and download return an actionable error instead of silently exporting a shorter
+video. Ordinary exports and audio-only plans keep their existing behavior.

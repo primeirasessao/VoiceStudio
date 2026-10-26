@@ -152,6 +152,8 @@ def test_ensure_is_a_noop_off_linux(tmp_path, monkeypatch):
 def test_asr_probes_report_unavailable_when_repair_impossible(monkeypatch):
     from services import asr_backend as ab
 
+    monkeypatch.setattr("core.windows_rocm.pipelines.windows_hip_installed", lambda: False)
+    monkeypatch.setattr("core.windows_rocm.ct2.windows_hip_installed", lambda: False)
     monkeypatch.setattr(
         ab, "_ctranslate2_execstack_ok", lambda: (False, "kernel refuses it")
     )
@@ -220,6 +222,7 @@ def test_concurrent_repairs_remain_available(tmp_path, monkeypatch):
 def test_isolated_probe_checks_repair_before_import(monkeypatch):
     from core import execstack
     from services.subprocess_asr import IsolatedFasterWhisperBackend
+    monkeypatch.setattr("core.windows_rocm.ct2.windows_hip_installed", lambda: False)
     monkeypatch.setattr(execstack, "ensure_ctranslate2_loadable", lambda: (False, "repair blocked"))
     ok, detail = IsolatedFasterWhisperBackend.is_available()
     assert not ok and "repair blocked" in detail

@@ -184,6 +184,8 @@ describe('packaged runtime setup', () => {
         runtimePython(project),
         ['-c', RUNTIME_IMPORT_PROBE],
         project,
+        expect.objectContaining({ OMNIVOICE_TORCH_VARIANT: 'cuda' }),
+        undefined,
       );
       expect(await readFile(join(project, '.runtime-ready'), 'utf8')).not.toBe('');
     },

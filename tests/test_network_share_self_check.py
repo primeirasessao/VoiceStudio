@@ -5,7 +5,9 @@ container bridge, VM host-only or VPN address, the phone on the same Wi-Fi
 got "could not connect".
 """
 import asyncio
+import importlib
 import socket
+import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -39,11 +41,12 @@ def _addr(ip):
     return SimpleNamespace(family=socket.AF_INET, address=ip)
 
 
-def _lan(fake, stats=None, primary=None):
-    with patch.object(ns.psutil, "net_if_addrs", return_value=fake), patch.object(
-        ns.psutil, "net_if_stats", return_value=stats or {}
-    ), patch.object(ns, "_default_route_ipv4", return_value=primary):
-        return ns.lan_ipv4_addresses()
+def _lan(fake, stats=None, primary=None, module=None):
+    module = module or ns
+    with patch.object(module.psutil, "net_if_addrs", return_value=fake), patch.object(
+        module.psutil, "net_if_stats", return_value=stats or {}
+    ), patch.object(module, "_default_route_ipv4", return_value=primary):
+        return module.lan_ipv4_addresses()
 
 
 def test_real_lan_address_comes_before_virtual_adapters():
@@ -61,12 +64,26 @@ def test_real_lan_address_comes_before_virtual_adapters():
     assert sorted(out) == sorted(a.address for addrs in fake.values() for a in addrs)
 
 
-def test_default_route_address_ranks_first_even_on_a_bridge():
+def test_default_route_address_ranks_first_even_on_a_bridge(module=None):
     fake = {
         "en0": [_addr("10.0.0.9")],
         "vEthernet (External Switch)": [_addr("192.168.1.42")],
     }
-    assert _lan(fake, primary="192.168.1.42") == ["192.168.1.42", "10.0.0.9"]
+    assert _lan(fake, primary="192.168.1.42", module=module) == ["192.168.1.42", "10.0.0.9"]
+
+
+def test_bridge_ranking_after_network_share_module_reimport(monkeypatch):
+    """Patch the module held by the test even after another suite reimports it."""
+    current = importlib.import_module("services.network_share")
+    services = importlib.import_module("services")
+    with monkeypatch.context() as cycle:
+        cycle.delitem(sys.modules, "services.network_share")
+        cycle.delattr(services, "network_share", raising=False)
+        replacement = importlib.import_module("services.network_share")
+        assert replacement is not ns
+        with patch.object(replacement, "_default_route_ipv4", return_value=None):
+            test_default_route_address_ranks_first_even_on_a_bridge(replacement)
+    assert importlib.import_module("services.network_share") is current
 
 
 def test_full_tunnel_vpn_on_the_default_route_never_ranks_first():
