@@ -350,8 +350,8 @@ it.each([
     renderGate('failed');
 
     // The raw message moves under Details once a cause is named.
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('backend.details') }));
-  expect(screen.getByLabelText(i18n.t('backend.log_label'))).toHaveTextContent(message);
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('backend.details') }));
+    expect(screen.getByLabelText(i18n.t('backend.log_label'))).toHaveTextContent(message);
     expect(screen.getByTestId('backend-hint')).toHaveTextContent(i18n.t(key));
   },
 );
@@ -411,6 +411,27 @@ it('offers Choose another folder for a missing Python environment', async () => 
   expect(chooseRuntimeLocation).toHaveBeenCalled();
 });
 
+it('gives a source checkout Retry, not a folder picker it cannot use (#3480)', () => {
+  const runtimePath = backendStatus.runtimePath;
+  delete backendStatus.runtimePath;
+  try {
+    backendStatus.message =
+      "The Python environment in C:\\Users\\me\\VoiceStudio is incomplete: ModuleNotFoundError: No module named 'fastapi'.";
+
+    renderGate('failed');
+
+    expect(screen.getByTestId('backend-cause')).toHaveTextContent(
+      i18n.t('backend.cause_missing_env'),
+    );
+    expect(
+      screen.queryByRole('button', { name: i18n.t('backend.choose_folder') }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: i18n.t('backend.retry') })).toBeEnabled();
+  } finally {
+    backendStatus.runtimePath = runtimePath;
+  }
+});
+
 it('names no cause for an unrecognised failure', () => {
   backendStatus.message = 'Backend exited unexpectedly (exit code 1).';
 
@@ -448,9 +469,21 @@ it('collapses repeated identical failures into one pill counter', () => {
   expect(screen.getByTestId('backend-status-pill')).not.toHaveTextContent(/2/);
 
   backendStatus.stage = 'starting';
-  view.rerender(<QueryClientProvider client={new QueryClient()}><BackendGate><div>workspace</div></BackendGate></QueryClientProvider>);
+  view.rerender(
+    <QueryClientProvider client={new QueryClient()}>
+      <BackendGate>
+        <div>workspace</div>
+      </BackendGate>
+    </QueryClientProvider>,
+  );
   backendStatus.stage = 'failed';
-  view.rerender(<QueryClientProvider client={new QueryClient()}><BackendGate><div>workspace</div></BackendGate></QueryClientProvider>);
+  view.rerender(
+    <QueryClientProvider client={new QueryClient()}>
+      <BackendGate>
+        <div>workspace</div>
+      </BackendGate>
+    </QueryClientProvider>,
+  );
 
   expect(screen.getByTestId('backend-status-pill')).toHaveTextContent(
     i18n.t('backend.pill_repeats', { count: 2 }),
@@ -462,7 +495,9 @@ it('shows a non-blocking offline bar while a live engine is busy', () => {
 
   renderGate('unresponsive');
 
-  expect(screen.getByTestId('backend-offline-bar')).toHaveTextContent(i18n.t('backend.offline_bar'));
+  expect(screen.getByTestId('backend-offline-bar')).toHaveTextContent(
+    i18n.t('backend.offline_bar'),
+  );
   expect(screen.queryByTestId('backend-gate-scroll')).not.toBeInTheDocument();
 });
 

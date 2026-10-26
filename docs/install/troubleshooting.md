@@ -1231,6 +1231,13 @@ runtime's `.uv-cache` folder, and the next attempt reuses it, including after
 The next attempt deletes the unfinished parts a cancelled attempt left behind,
 so repeated retries do not fill the disk.
 
+**Resume after an interrupted setup** keeps the existing Python environment and
+installs only what is missing, from the same `.uv-cache`; it never evicts wheels
+that already finished downloading. A runtime whose setup finished is never shown
+as interrupted, even if an old setup marker was left behind in
+`runtime\project`: VoiceStudio sees that setup completed after it and opens
+normally.
+
 **What to do:**
 
 1. **If the bytes are still moving, let it run.** A stall notice only appears
@@ -1424,7 +1431,8 @@ the message:
 
 When the app recognises the cause it also names it in one line and puts the
 matching action first: **Choose another folder** for a missing environment, a
-write-permission error or a cloud-synced folder, **Copy diagnostics** for a
+write-permission error or a cloud-synced folder (installed app only; a source
+checkout gets **Retry**, which re-checks its `.venv` after `bun run setup:api`), **Copy diagnostics** for a
 native crash such as exit code `3221225477`, and **Retry** otherwise.
 
 The failure screen shows a single status pill (Starting, Recovering or Failed)
@@ -1462,8 +1470,8 @@ reconnecting automatically; the workspace stays usable.
   slowest because antivirus scans every new file; later starts are much faster.
 - **Installed app, Python environment deleted** (antivirus, disk cleanup, interrupted update): VoiceStudio rebuilds it by itself on the next launch with the normal setup progress screen, once per launch. If that repair fails the setup screen says so; check the engine log and press Retry. Your voices and projects are never touched.
 - **`The Python environment in <folder> is missing`** or **`… is incomplete:
-  <reason>`** (running from a source checkout) — run `bun run setup:api` in the
-  repository and let it finish (the message names the folder to open the terminal in; it is never taken from the terminal's working directory, so running from `C:\Windows\System32` does not matter). A folder without `pyproject.toml` is not a source checkout: install from the release installer instead. *Missing* means no `.venv` exists yet.
+  <reason>`** (running from a source checkout, e.g. `bun run dev`; an installed app never shows this message and repairs its own runtime from the setup screen) — run `bun run setup:api` in the
+  repository, let it finish, then press **Retry** (the message names the folder to open the terminal in; it is never taken from the terminal's working directory, so running from `C:\Windows\System32` does not matter). A folder without `pyproject.toml` is not a source checkout: install from the release installer instead. *Missing* means no `.venv` exists yet.
   *Incomplete* quotes the import that failed, e.g. `ModuleNotFoundError: No
   module named 'sentencepiece'` (setup did not finish: rerun it) or `ImportError:
   DLL load failed` (Windows: rerun setup, which installs the Visual C++

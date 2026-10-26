@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile, statfs } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile, statfs, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { downloadRuntimeInstaller } from './runtime-download';
@@ -587,6 +587,92 @@ describe('packaged runtime setup', () => {
     await expect(
       installRuntime(bundle, project, 'uv', run, new AbortController().signal),
     ).rejects.toMatchObject({ code: MISSING_SYSTEM_LIBRARY_CODE });
+  });
+  it('treats a finished runtime with a leftover install marker as ready, not interrupted (#3475)', async () => {
+    const { bundle, project } = await fixture();
+    await installRuntime(
+      bundle,
+      project,
+      'uv',
+      async () => interpreter(project),
+      new AbortController().signal,
+      undefined,
+      'global',
+    );
+    // The marker survived the finished install (Windows refused its removal).
+    const marker = join(project, '.runtime-installing');
+    await writeFile(marker, '');
+    const old = new Date(Date.now() - 60_000);
+    await utimes(marker, old, old);
+
+    expect(await runtimeInstallInterrupted(project)).toBe(false);
+    expect(await runtimeReady(bundle, project)).toBe(true);
+    expect(await runtimeCompatible(bundle, project)).toBe(true);
+    expect(existsSync(marker)).toBe(false);
+  });
+  it('still reports an install that started after the last ready marker as interrupted', async () => {
+    const { bundle, project } = await fixture();
+    await installRuntime(
+      bundle,
+      project,
+      'uv',
+      async () => interpreter(project),
+      new AbortController().signal,
+      undefined,
+      'global',
+    );
+    const old = new Date(Date.now() - 60_000);
+    await utimes(join(project, '.runtime-ready'), old, old);
+    await writeFile(join(project, '.runtime-installing'), new Date().toISOString());
+
+    expect(await runtimeInstallInterrupted(project)).toBe(true);
+    expect(await runtimeReady(bundle, project)).toBe(false);
+  });
+  it('resumes an interrupted install from the uv cache instead of evicting its wheels (#3475)', async () => {
+    const { bundle, project } = await fixture();
+    await interpreter(project);
+    await writeFile(join(project, '.runtime-installing'), new Date().toISOString());
+    let synced = false;
+    const run = vi.fn(async (command: string, args: string[]) => {
+      if (args[0] === 'sync') synced = true;
+      if (
+        !synced &&
+        command === runtimePython(project) &&
+        (args[1] === RUNTIME_IMPORT_PROBE || args[1] === RUNTIME_NATIVE_IMPORT_PROBE)
+      ) {
+        throw new Error("No module named 'torch'");
+      }
+    });
+    await installRuntime(bundle, project, 'uv', run, new AbortController().signal);
+    expect(run.mock.calls.some(([, args]) => args[0] === 'cache')).toBe(false);
+    const sync = run.mock.calls.find(([, args]) => args[0] === 'sync');
+    expect(sync?.[1]).toContain(runtimePython(project));
+    expect(await runtimeReady(bundle, project)).toBe(true);
+    expect(await runtimeInstallInterrupted(project)).toBe(false);
+  });
+  it('keeps an installed CPU torch through a re-run instead of uninstalling it (#3475)', async () => {
+    forcePlatform('win32');
+    vi.spyOn(process, 'arch', 'get').mockReturnValue('x64');
+    vi.stubEnv('OMNIVOICE_TORCH_VARIANT', 'cpu');
+    const { bundle, project } = await fixture();
+    const sitePackages = join(project, '.venv', 'Lib', 'site-packages');
+    const run = vi.fn(async (_command: string, args: string[]) => {
+      if (args[0] === 'sync') await interpreter(project);
+      if (args[1]?.includes('VOICESTUDIO_CUDNN8_PROBE=')) {
+        return `VOICESTUDIO_CUDNN8_PROBE=${JSON.stringify({ device: 'none', sitePackages })}\n`;
+      }
+      return undefined;
+    });
+    const install = () =>
+      installRuntime(bundle, project, 'uv', run, new AbortController().signal, undefined, 'global');
+    await install();
+    const syncs = () => run.mock.calls.filter(([, args]) => args[0] === 'sync');
+    // First install: exact, nothing CPU-specific to keep yet.
+    expect(syncs()[0]?.[1]).not.toContain('--inexact');
+    await install();
+    const resync = syncs()[1]?.[1];
+    expect(resync).toContain('--inexact');
+    expect(resync).toEqual(expect.arrayContaining(['--no-install-package', 'torch']));
   });
   it('repairs sentencepiece without evicting healthy PyTorch wheels', async () => {
     const { bundle, project } = await fixture();

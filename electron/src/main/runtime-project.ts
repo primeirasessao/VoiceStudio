@@ -429,22 +429,42 @@ async function ensureCudnn8Compat(
   }
 }
 
-async function runtimeIncomplete(project: string): Promise<boolean> {
+export const RUNTIME_INSTALLING_MARKER = '.runtime-installing';
+export const RUNTIME_READY_MARKER = '.runtime-ready';
+
+/**
+ * What the install marker says about the project.
+ *
+ * `installRuntime` writes `.runtime-installing` first and `.runtime-ready` only
+ * after the final import verification, so a ready marker written AFTER the
+ * install marker proves that install finished. A marker that survived anyway
+ * (a removal Windows refused while a scanner held the file, a quit between the
+ * last two writes) is stale: trusting it sent a finished 16 GB runtime back to
+ * "Resume interrupted download" (#3475). A stale marker is removed best-effort.
+ */
+async function installMarkerState(project: string): Promise<'none' | 'active' | 'unknown'> {
+  const markerPath = join(project, RUNTIME_INSTALLING_MARKER);
+  let marker;
   try {
-    await stat(join(project, '.runtime-installing'));
-    return true;
+    marker = await stat(markerPath);
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'none' : 'unknown';
   }
+  const ready = await stat(join(project, RUNTIME_READY_MARKER)).catch(() => null);
+  if (ready?.isFile() && ready.mtimeMs >= marker.mtimeMs) {
+    await rm(markerPath, { force: true }).catch(() => undefined);
+    return 'none';
+  }
+  return marker.isFile() ? 'active' : 'unknown';
 }
 
-/** True only when a prior explicit runtime install left its durable marker behind. */
+async function runtimeIncomplete(project: string): Promise<boolean> {
+  return (await installMarkerState(project)) !== 'none';
+}
+
+/** True only when a prior explicit runtime install stopped before it finished. */
 export async function runtimeInstallInterrupted(project: string): Promise<boolean> {
-  try {
-    return (await stat(join(project, '.runtime-installing'))).isFile();
-  } catch {
-    return false;
-  }
+  return (await installMarkerState(project)) === 'active';
 }
 
 /**
@@ -651,7 +671,7 @@ export async function runtimeReady(bundle: string, project: string): Promise<boo
       (await stat(runtimePython(project))).isFile() &&
       (await stat(join(project, '.venv', 'pyvenv.cfg'))).isFile() &&
       (await acceptedStamps(bundle)).includes(
-        await readFile(join(project, '.runtime-ready'), 'utf8'),
+        await readFile(join(project, RUNTIME_READY_MARKER), 'utf8'),
       ) &&
       (!windowsRocmSelected() ||
         ((await windowsRocmRecipeMatches(bundle, project)) && (await windowsRocmReady(project))))
@@ -678,10 +698,12 @@ export async function runtimeCompatible(bundle: string, project: string): Promis
         readFile(join(project, 'pyproject.toml')),
         readFile(join(bundle, 'uv.lock')),
         readFile(join(project, 'uv.lock')),
-        readFile(join(project, '.runtime-ready'), 'utf8').catch((error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return null;
-          throw error;
-        }),
+        readFile(join(project, RUNTIME_READY_MARKER), 'utf8').catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return null;
+            throw error;
+          },
+        ),
       ]);
     return (
       python.isFile() &&
@@ -866,8 +888,13 @@ export async function installRuntime(
     await rm(probe, { force: true });
   }
   signal.throwIfAborted();
-  await writeFile(join(project, '.runtime-installing'), '');
-  await rm(join(project, '.runtime-ready'), { force: true });
+  // Read before this attempt rewrites the marker: a resume must reuse what the
+  // interrupted attempt already downloaded (#3475).
+  const resuming = await runtimeInstallInterrupted(project);
+  // Non-empty content so every attempt moves the marker's mtime, which is what
+  // tells a finished install (ready marker newer) from an interrupted one.
+  await writeFile(join(project, RUNTIME_INSTALLING_MARKER), new Date().toISOString());
+  await rm(join(project, RUNTIME_READY_MARKER), { force: true });
   await stageRuntimeSources(bundle, project);
   await promoteLegacyRuntimeCaches(project);
   // A promoted legacy cache can carry interrupted downloads of its own.
@@ -970,10 +997,13 @@ export async function installRuntime(
     .filter((name) => !cpuTorch || !torchPackages.includes(name))
     .flatMap((name) => ['--reinstall-package', name]);
   signal.throwIfAborted();
-  if (repairPackages.length) {
+  if (repairPackages.length && !resuming) {
     // uv may hardlink installed files to its unpacked wheel cache. A corrupted
     // native file can therefore poison the cached copy too; evict only this
     // package from the app-private cache before reinstalling its locked wheel.
+    // Not on a resume: there the import fails because the interrupted attempt
+    // never finished installing, and uv only adds finished wheels to its cache,
+    // so evicting would throw away gigabytes already downloaded (#3475).
     await run(uv, ['cache', 'clean', ...repairPackages], project, env);
     signal.throwIfAborted();
   }
@@ -984,9 +1014,19 @@ export async function installRuntime(
     ? windowsRocmSyncArgs(await readFile(join(project, 'uv.lock'), 'utf8'))
     : cpuTorch
       ? [
-          ...torchPackages,
-          ...cudaOnlyPackages(await readFile(join(project, 'uv.lock'), 'utf8')),
-        ].flatMap((name) => ['--no-install-package', name])
+          // Exact sync uninstalls every skipped package, so each Resume or
+          // Repair removed the CPU torch it then had to lay down again (#3475).
+          // Only keep what a CPU install laid down: switching from a CUDA
+          // runtime must still remove its multi-GB CUDA wheels.
+          ...((await readFile(join(project, RUNTIME_TORCH_MARKER), 'utf8').catch(() => '')) ===
+          'cpu'
+            ? ['--inexact']
+            : []),
+          ...[
+            ...torchPackages,
+            ...cudaOnlyPackages(await readFile(join(project, 'uv.lock'), 'utf8')),
+          ].flatMap((name) => ['--no-install-package', name]),
+        ]
       : [];
   await syncLockedWithMirror(
     project,
@@ -1071,12 +1111,23 @@ export async function installRuntime(
     }
   }
   signal.throwIfAborted();
-  await writeFile(join(project, '.runtime-ready'), await dependencyStamp(bundle, torch.variant));
   await writeFile(
     join(project, RUNTIME_TORCH_MARKER),
     windowsRocm ? 'windows-rocm' : torch.variant,
   );
-  await rm(join(project, '.runtime-installing'), { force: true });
+  // The ready marker is written last and is authoritative: it supersedes the
+  // install marker even if removing that marker below fails (#3475).
+  await writeFile(
+    join(project, RUNTIME_READY_MARKER),
+    await dependencyStamp(bundle, torch.variant),
+  );
+  // Windows briefly locks a freshly written file while antivirus or the indexer
+  // scans it; retry instead of failing a finished install on that lock.
+  await rm(join(project, RUNTIME_INSTALLING_MARKER), {
+    force: true,
+    maxRetries: 5,
+    retryDelay: 200,
+  }).catch(() => undefined);
 }
 
 /** Move caches created by Electron runtime v1 outside the replaceable project. */

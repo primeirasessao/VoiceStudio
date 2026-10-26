@@ -101,6 +101,24 @@ it('names the failing import or the absent interpreter instead of one vague mess
   expect(missing.error).not.toContain('incomplete');
 });
 
+it('never gives an installed app the source-checkout setup command (#3480)', async () => {
+  vi.stubEnv('OMNIVOICE_BACKEND_CMD', '');
+  state.packaged = true;
+  state.installed = false;
+  state.ready = false;
+  const plan = await resolveSpawnPlan(3900, '/managed/runtime/project');
+  expect(plan).not.toHaveProperty('error');
+  expect(JSON.stringify(plan)).not.toContain('setup:api');
+});
+
+it('tells a source checkout to press Retry after setup, since Retry re-checks the environment', async () => {
+  vi.stubEnv('OMNIVOICE_BACKEND_CMD', '');
+  state.ready = false;
+  const plan = await resolveSpawnPlan(3900);
+  if (!('error' in plan)) throw new Error('expected a setup error');
+  expect(plan.error).toContain('then press Retry.');
+});
+
 it('names the folder to open and refuses setup advice outside a checkout (#2988)', async () => {
   vi.stubEnv('OMNIVOICE_BACKEND_CMD', '');
   state.installed = false;
@@ -180,9 +198,9 @@ it('reads Smart App Control from the registry output', () => {
   expect(smartAppControlFromRegistry(reg('0x2'))).toBe('evaluation');
   expect(smartAppControlFromRegistry(reg('0x0'))).toBe('off');
   expect(smartAppControlFromRegistry(reg('0x9'))).toBe('unknown');
-  expect(smartAppControlFromRegistry('ERROR: The system was unable to find the specified registry key')).toBe(
-    'unknown',
-  );
+  expect(
+    smartAppControlFromRegistry('ERROR: The system was unable to find the specified registry key'),
+  ).toBe('unknown');
 });
 
 it('names Smart App Control when it blocked the runtime (#3224)', () => {
@@ -197,11 +215,15 @@ it('names Smart App Control when it blocked the runtime (#3224)', () => {
   }
   // Off or unreadable: the existing advice stays.
   for (const smartAppControl of ['off', 'unknown'] as const) {
-    expect(spawnFailureMessage(python, blocked, { smartAppControl })).toContain('repair the local runtime');
+    expect(spawnFailureMessage(python, blocked, { smartAppControl })).toContain(
+      'repair the local runtime',
+    );
   }
   // Only the bare Windows UNKNOWN is attributed to it, never a missing file.
   const missing = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
-  expect(spawnFailureMessage(python, missing, { smartAppControl: 'on' })).not.toContain('Smart App Control');
+  expect(spawnFailureMessage(python, missing, { smartAppControl: 'on' })).not.toContain(
+    'Smart App Control',
+  );
 });
 
 it('points a custom backend command at its own executable', () => {
@@ -299,7 +321,10 @@ it('tells the backend the dev renderer port so Sharing reports the real UI port'
 });
 
 it('hands backend-only capabilities to the managed backend alone, never to process.env', () => {
-  setBackendOnlyEnv({ VOICESTUDIO_ACCOUNT_BRIDGE_URL: 'http://127.0.0.1:1', VOICESTUDIO_ACCOUNT_BRIDGE_TOKEN: 'cap' });
+  setBackendOnlyEnv({
+    VOICESTUDIO_ACCOUNT_BRIDGE_URL: 'http://127.0.0.1:1',
+    VOICESTUDIO_ACCOUNT_BRIDGE_TOKEN: 'cap',
+  });
   try {
     expect(managedBackendSpawnOptions(3900).env).toMatchObject({
       VOICESTUDIO_ACCOUNT_BRIDGE_URL: 'http://127.0.0.1:1',
@@ -307,7 +332,10 @@ it('hands backend-only capabilities to the managed backend alone, never to proce
     });
     expect(process.env.VOICESTUDIO_ACCOUNT_BRIDGE_TOKEN).toBeUndefined();
   } finally {
-    setBackendOnlyEnv({ VOICESTUDIO_ACCOUNT_BRIDGE_URL: undefined, VOICESTUDIO_ACCOUNT_BRIDGE_TOKEN: undefined });
+    setBackendOnlyEnv({
+      VOICESTUDIO_ACCOUNT_BRIDGE_URL: undefined,
+      VOICESTUDIO_ACCOUNT_BRIDGE_TOKEN: undefined,
+    });
   }
   expect(managedBackendSpawnOptions(3900).env.VOICESTUDIO_ACCOUNT_BRIDGE_TOKEN).toBeUndefined();
 });

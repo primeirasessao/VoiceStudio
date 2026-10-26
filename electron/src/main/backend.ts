@@ -292,7 +292,10 @@ function usableFile(path: string): boolean {
  * located. A blank value is dropped rather than passed on, because the backend reads
  * any set value as "the shell tried and failed" instead of falling back to PATH.
  */
-export function bundledUvEnv(pinned: string | undefined, locate: () => string | null): string | undefined {
+export function bundledUvEnv(
+  pinned: string | undefined,
+  locate: () => string | null,
+): string | undefined {
   if (pinned?.trim()) return pinned;
   return locate() ?? undefined;
 }
@@ -489,7 +492,10 @@ export async function resolveSpawnPlan(
   // deadline and repeat that download after every restart (#2184).
   const portArg = ['--port', String(port)];
   const python = venvPython(root);
-  const setup = `Open a terminal in ${root}, run \`bun run setup:api\`, wait for it to finish, then restart.`;
+  // Only a source checkout reaches this point: an installed app returned above
+  // with its app-managed runtime, which the setup screen repairs in-app (#3480).
+  // Retry re-runs this check, so a finished setup needs no app restart.
+  const setup = `Open a terminal in ${root}, run \`bun run setup:api\`, wait for it to finish, then press Retry.`;
   if (!existsSync(python)) {
     // Not a source checkout and not a packaged app (a copied folder, a
     // download of the wrong archive): setup:api does not exist there (#2988).
@@ -638,7 +644,10 @@ export type SmartAppControl = 'on' | 'evaluation' | 'off' | 'unknown';
 export function smartAppControlFromRegistry(output: string): SmartAppControl {
   const match = /VerifiedAndReputablePolicyState\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(output);
   if (!match) return 'unknown';
-  return ({ 0: 'off', 1: 'on', 2: 'evaluation' } as const)[Number.parseInt(match[1], 16) as 0 | 1 | 2] ?? 'unknown';
+  return (
+    ({ 0: 'off', 1: 'on', 2: 'evaluation' } as const)[Number.parseInt(match[1], 16) as 0 | 1 | 2] ??
+    'unknown'
+  );
 }
 
 /** Read only after a launch was already refused, so the 3 s cap never delays a healthy start. */
@@ -647,7 +656,12 @@ function readSmartAppControl(platform = process.platform): SmartAppControl {
   try {
     const result = spawnSync(
       'reg.exe',
-      ['query', String.raw`HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy`, '/v', 'VerifiedAndReputablePolicyState'],
+      [
+        'query',
+        String.raw`HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy`,
+        '/v',
+        'VerifiedAndReputablePolicyState',
+      ],
       { encoding: 'utf8', timeout: 3000, windowsHide: true },
     );
     return smartAppControlFromRegistry(result.stdout ?? '');
@@ -802,7 +816,12 @@ export class BackendSupervisor extends EventEmitter<{
       uv: findUvAsync,
       gpu: async () => {
         const info = (await app.getGPUInfo('basic')) as {
-          gpuDevice?: { vendorId?: number; deviceId?: number; active?: boolean; driverVersion?: string }[];
+          gpuDevice?: {
+            vendorId?: number;
+            deviceId?: number;
+            active?: boolean;
+            driverVersion?: string;
+          }[];
         };
         const devices = info.gpuDevice ?? [];
         const active = devices.find((device) => device.active) ?? devices[0];
@@ -952,8 +971,7 @@ export class BackendSupervisor extends EventEmitter<{
               previouslyInstalled: await runtimeWasInstalled(project),
               repairAttempted: this.repairAttempted,
               unsupported: isUnsupportedPlatform(),
-              rocmNotYetInstalled:
-                windowsRocmRequested() && !(await windowsRocmInstalled(project)),
+              rocmNotYetInstalled: windowsRocmRequested() && !(await windowsRocmInstalled(project)),
             });
             this.runtimeRepairFailed = action === 'repair_failed';
             this.runtimeInterrupted = await runtimeInstallInterrupted(project);
@@ -1385,7 +1403,9 @@ export class BackendSupervisor extends EventEmitter<{
   private runtimeStorage(): { runtimeStorage?: ScopedStorage } {
     const scoped = scopedRuntimeRoot();
     const root = this.runtimeProject ? dirname(this.runtimeProject) : null;
-    return scoped && root && samePath(scoped, root) ? { runtimeStorage: scopedStorage(scoped) } : {};
+    return scoped && root && samePath(scoped, root)
+      ? { runtimeStorage: scopedStorage(scoped) }
+      : {};
   }
 
   setRuntimeLocation(parent: string | null): { path: string; custom: boolean } {
@@ -1658,9 +1678,7 @@ export class BackendSupervisor extends EventEmitter<{
     this.exitCode = code;
     this.exitSignal = signal;
     const bindFailure =
-      code === EXIT_PORT_IN_USE
-        ? 'in_use'
-        : bindFailureFromLog(this.childLog.join('\n'));
+      code === EXIT_PORT_IN_USE ? 'in_use' : bindFailureFromLog(this.childLog.join('\n'));
     if (bindFailure === 'in_use') {
       this.setStage('port_in_use', {
         message: `Port ${this.port} is already in use by another process. Stop it or set OMNIVOICE_PORT.`,
@@ -1727,9 +1745,7 @@ export class BackendSupervisor extends EventEmitter<{
     if (!project) return false;
     if (samePath(project, join(defaultRuntimeRoot(), 'project'))) return true;
     const configured = storedRuntimeLocation();
-    return Boolean(
-      configured?.owned && samePath(project, join(configured.root, 'project')),
-    );
+    return Boolean(configured?.owned && samePath(project, join(configured.root, 'project')));
   }
 
   private canRepairRuntime(): boolean {

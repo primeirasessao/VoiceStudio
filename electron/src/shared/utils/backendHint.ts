@@ -79,6 +79,22 @@ export const BACKEND_CAUSE_ACTION: Record<BackendCause, BackendCauseAction> = {
 };
 
 /**
+ * The primary action for a cause on this install. Moving the environment only
+ * exists for the app-managed runtime of an installed app: a source checkout's
+ * `.venv` lives in the repository, the folder picker refuses it, and a
+ * "Choose another folder" button there did nothing (#3480). Retry re-checks the
+ * environment instead, which is what a source user needs after running setup.
+ */
+export function backendCauseAction(
+  cause: BackendCause | null,
+  { managedRuntime }: { managedRuntime: boolean },
+): BackendCauseAction {
+  if (!cause) return 'retry';
+  const action = BACKEND_CAUSE_ACTION[cause];
+  return action === 'choose_folder' && !managedRuntime ? 'retry' : action;
+}
+
+/**
  * Collapses a failed-backend message into ONE named cause, most specific
  * first, or null when nothing is recognised (the raw message is then shown
  * alone with Retry). Covers `spawn UNKNOWN`, a missing Python environment, a
