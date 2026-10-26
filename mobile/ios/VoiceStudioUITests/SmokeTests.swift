@@ -14,6 +14,20 @@ extension XCUIApplication {
         let symbols = ["Home": "house", "Voices": "person.wave.2", "Dub": "film", "Dictate": "mic", "Settings": "gearshape"]
         return buttons.matching(NSPredicate(format: "label == %@ AND identifier == %@", label, symbols[label] ?? label)).firstMatch
     }
+    /// Swipes until `element` sits wholly between the navigation bar and the tab bar.
+    /// Content scrolled under those translucent bars can still report `isHittable`,
+    /// and a tap there lands on the bar instead of the element.
+    @MainActor func reveal(_ element: XCUIElement, swipingDown: Bool = false, attempts: Int = 8) {
+        for _ in 0..<attempts {
+            if element.isHittable {
+                let bar = navigationBars.firstMatch, tab = tabBars.firstMatch
+                let top = bar.exists ? bar.frame.maxY : frame.minY
+                let bottom = tab.exists && tab.frame.height < frame.height / 3 ? tab.frame.minY : frame.maxY
+                if element.frame.minY >= top - 0.5 && element.frame.maxY <= bottom + 0.5 { return }
+            }
+            if swipingDown { swipeDown() } else { swipeUp() }
+        }
+    }
     @MainActor func openSpeak() {
         tabButton("Home").tap()
         if textViews["speak.text"].exists { return }
